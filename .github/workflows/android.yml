@@ -1,0 +1,131 @@
+name: Android CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Download sherpa-onnx AAR
+        run: |
+          mkdir -p app/libs
+          SHERPA_VERSION="1.12.10"
+          AAR_FILE="app/libs/sherpa-onnx-android-${SHERPA_VERSION}.aar"
+          # Try version-specific URL first, then fallback to known good version
+          URLS=(
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-v${SHERPA_VERSION}-android.aar"
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.28/sherpa-onnx-v1.12.28-android.aar"
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.20/sherpa-onnx-v1.12.20-android.aar"
+          )
+          for URL in "${URLS[@]}"; do
+            echo "Trying: $URL"
+            if curl -L --fail --max-time 120 "$URL" -o "$AAR_FILE" 2>&1; then
+              SIZE=$(stat -c%s "$AAR_FILE" 2>/dev/null || echo 0)
+              echo "Downloaded: $SIZE bytes"
+              if [ "$SIZE" -gt 100000 ]; then
+                echo "✓ sherpa-onnx AAR downloaded successfully ($SIZE bytes)"
+                break
+              fi
+            fi
+            echo "Failed or too small, trying next URL..."
+          done
+          if [ ! -f "$AAR_FILE" ] || [ "$(stat -c%s "$AAR_FILE")" -lt 100000 ]; then
+            echo "ERROR: Failed to download a valid sherpa-onnx AAR"
+            exit 1
+          fi
+
+      - name: Download Whisper Tiny Models
+        run: |
+          mkdir -p app/models/whisper-tiny
+          BASE_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
+          MODEL_ARCHIVE="sherpa-onnx-whisper-tiny.en.tar.bz2"
+          echo "Downloading Whisper tiny.en model..."
+          if curl -L --fail --max-time 300 "${BASE_URL}/${MODEL_ARCHIVE}" -o /tmp/${MODEL_ARCHIVE}; then
+            tar -xjf /tmp/${MODEL_ARCHIVE} -C /tmp/
+            ls /tmp/sherpa-onnx-whisper-tiny.en/ || true
+            cp /tmp/sherpa-onnx-whisper-tiny.en/tiny.en-encoder.int8.onnx app/models/whisper-tiny/ 2>/dev/null || \
+            find /tmp/sherpa-onnx-whisper-tiny.en -name "*encoder*" -exec cp {} app/models/whisper-tiny/tiny.en-encoder.int8.onnx \; 2>/dev/null || true
+            cp /tmp/sherpa-onnx-whisper-tiny.en/tiny.en-decoder.int8.onnx app/models/whisper-tiny/ 2>/dev/null || \
+            find /tmp/sherpa-onnx-whisper-tiny.en -name "*decoder*" -exec cp {} app/models/whisper-tiny/tiny.en-decoder.int8.onnx \; 2>/dev/null || true
+            cp /tmp/sherpa-onnx-whisper-tiny.en/tiny.en-tokens.txt app/models/whisper-tiny/ 2>/dev/null || \
+            find /tmp/sherpa-onnx-whisper-tiny.en -name "*.txt" -exec cp {} app/models/whisper-tiny/tiny.en-tokens.txt \; 2>/dev/null || true
+          else
+            echo "Archive download failed, trying individual files..."
+            # Try direct file downloads as fallback
+            FILES=(
+              "tiny.en-encoder.int8.onnx"
+              "tiny.en-decoder.int8.onnx"
+              "tiny.en-tokens.txt"
+            )
+            for F in "${FILES[@]}"; do
+              curl -L --fail --max-time 120 \
+                "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny.en/resolve/main/${F}" \
+                -o "app/models/whisper-tiny/${F}" 2>/dev/null || echo "Warning: $F not downloaded"
+            done
+          fi
+          ls -lh app/models/whisper-tiny/ || echo "No whisper-tiny models found"
+
+      - name: Download WeSpeaker Model
+        run: |
+          mkdir -p app/models/wespeaker
+          echo "Downloading WeSpeaker model..."
+          curl -L --fail --max-time 180 \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recog-models/sherpa-onnx-wespeaker-zh-cnceleb-resnet34.tar.bz2" \
+            -o /tmp/wespeaker.tar.bz2 2>/dev/null || \
+          curl -L --fail --max-time 180 \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recog-models/wespeaker-voxceleb-resnet34-LM.onnx" \
+            -o app/models/wespeaker/model.onnx 2>/dev/null || echo "WeSpeaker download failed, continuing..."
+          if [ -f /tmp/wespeaker.tar.bz2 ]; then
+            tar -xjf /tmp/wespeaker.tar.bz2 -C /tmp/ 2>/dev/null || true
+            find /tmp -name "*.onnx" -path "*/wespeaker*" -exec cp {} app/models/wespeaker/model.onnx \; 2>/dev/null || true
+          fi
+          ls -lh app/models/wespeaker/ || echo "No wespeaker model found"
+
+      - name: Verify model structure
+        run: |
+          echo "=== Model directory structure ==="
+          find app/models -type f | sort
+          echo "=== AAR in libs ==="
+          ls -lh app/libs/
+
+      - name: Build Debug APK
+        run: ./gradlew clean assembleDebug --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+      - name: Show build output on failure
+        if: failure()
+        run: |
+          echo "=== BUILD FAILED — Full Gradle output above ==="
+          find . -name "*.log" -newer gradlew -exec echo "--- {} ---" \; -exec cat {} \; 2>/dev/null || true

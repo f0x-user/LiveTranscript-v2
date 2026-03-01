@@ -1,0 +1,40 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Sherpa-onnx AAR (downloaded by CI)
+app/libs/*.aar
+
+# ONNX models (too large for git — downloaded by CI or Git LFS)
+app/models/**/*.onnx
+# Tokens file can be tracked (small text file)
+!app/models/**/*.txt
+
+# Kotlin
+*.class
+*.log
+
+# Archives (not source)
+*.war
+*.zip
+*.tar.gz
+*.rar
+
+# Keep Gradle wrapper JAR
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio
+.idea/
+*.iml
+*.class
+
+# Generated
+app/build/
+build/
