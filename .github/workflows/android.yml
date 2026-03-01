@@ -34,13 +34,13 @@ jobs:
       - name: Download sherpa-onnx AAR
         run: |
           mkdir -p app/libs
-          SHERPA_VERSION="1.12.10"
-          AAR_FILE="app/libs/sherpa-onnx-android-${SHERPA_VERSION}.aar"
-          # Try version-specific URL first, then fallback to known good version
+          SHERPA_VERSION="1.12.28"
+          # Correct filename: sherpa-onnx-{VERSION}.aar (no 'v' prefix, no '-android' suffix)
+          AAR_FILE="app/libs/sherpa-onnx-${SHERPA_VERSION}.aar"
           URLS=(
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-v${SHERPA_VERSION}-android.aar"
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.28/sherpa-onnx-v1.12.28-android.aar"
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.20/sherpa-onnx-v1.12.20-android.aar"
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-${SHERPA_VERSION}.aar"
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.27/sherpa-onnx-1.12.27.aar"
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.26/sherpa-onnx-1.12.26.aar"
           )
           for URL in "${URLS[@]}"; do
             echo "Trying: $URL"
@@ -93,17 +93,24 @@ jobs:
       - name: Download WeSpeaker Model
         run: |
           mkdir -p app/models/wespeaker
-          echo "Downloading WeSpeaker model..."
-          curl -L --fail --max-time 180 \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recog-models/sherpa-onnx-wespeaker-zh-cnceleb-resnet34.tar.bz2" \
-            -o /tmp/wespeaker.tar.bz2 2>/dev/null || \
-          curl -L --fail --max-time 180 \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recog-models/wespeaker-voxceleb-resnet34-LM.onnx" \
-            -o app/models/wespeaker/model.onnx 2>/dev/null || echo "WeSpeaker download failed, continuing..."
-          if [ -f /tmp/wespeaker.tar.bz2 ]; then
-            tar -xjf /tmp/wespeaker.tar.bz2 -C /tmp/ 2>/dev/null || true
-            find /tmp -name "*.onnx" -path "*/wespeaker*" -exec cp {} app/models/wespeaker/model.onnx \; 2>/dev/null || true
-          fi
+          echo "Downloading WeSpeaker ResNet34 model..."
+          # Tag has a typo in official repo: 'speaker-recongition-models' (not 'recognition')
+          # File is a direct .onnx, not a tar.bz2
+          URLS=(
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_zh_cnceleb_resnet34.onnx"
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34.onnx"
+          )
+          for URL in "${URLS[@]}"; do
+            echo "Trying: $URL"
+            if curl -L --fail --max-time 180 "$URL" -o app/models/wespeaker/model.onnx 2>&1; then
+              SIZE=$(stat -c%s app/models/wespeaker/model.onnx 2>/dev/null || echo 0)
+              if [ "$SIZE" -gt 1000000 ]; then
+                echo "✓ WeSpeaker model downloaded ($SIZE bytes)"
+                break
+              fi
+            fi
+            echo "Failed or too small, trying next URL..."
+          done
           ls -lh app/models/wespeaker/ || echo "No wespeaker model found"
 
       - name: Verify model structure

@@ -7,16 +7,17 @@ plugins {
 }
 
 // Download sherpa-onnx AAR if not present or too small
-val sherpaVersion = "1.12.10"
-val sherpaAar = file("${projectDir}/libs/sherpa-onnx-android-${sherpaVersion}.aar")
+// Correct filename format: sherpa-onnx-{VERSION}.aar (no 'v' prefix, no '-android' suffix)
+val sherpaVersion = "1.12.28"
+val sherpaAar = file("${projectDir}/libs/sherpa-onnx-${sherpaVersion}.aar")
 
 tasks.register("downloadSherpaOnnxAAR") {
     doLast {
         if (sherpaAar.length() < 10_000L) {
             sherpaAar.parentFile.mkdirs()
             val urls = listOf(
-                "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${sherpaVersion}/sherpa-onnx-v${sherpaVersion}-android.aar",
-                "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.28/sherpa-onnx-v1.12.28-android.aar"
+                "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${sherpaVersion}/sherpa-onnx-${sherpaVersion}.aar",
+                "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.27/sherpa-onnx-1.12.27.aar"
             )
             var downloaded = false
             for (url in urls) {
