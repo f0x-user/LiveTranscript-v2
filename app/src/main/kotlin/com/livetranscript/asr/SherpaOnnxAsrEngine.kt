@@ -66,6 +66,8 @@ class SherpaOnnxAsrEngine(private val context: Context) : AsrEngine {
         return try {
             val stream = rec.createStream()
             stream.acceptWaveform(samples, sampleRate = SAMPLE_RATE)
+            // Signal end of input (required by some sherpa-onnx versions)
+            try { stream.inputFinished() } catch (_: Exception) {}
             rec.decode(stream)
             val result = rec.getResult(stream).text.trim()
             stream.release()

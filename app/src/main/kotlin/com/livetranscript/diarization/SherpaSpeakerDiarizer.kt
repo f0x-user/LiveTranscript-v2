@@ -44,6 +44,8 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
         return try {
             val stream = ext.createStream()
             stream.acceptWaveform(samples, sampleRate = SAMPLE_RATE)
+            // Signal end of input before extracting embedding
+            try { stream.inputFinished() } catch (_: Exception) {}
             val embedding = ext.compute(stream)
             stream.release()
 
