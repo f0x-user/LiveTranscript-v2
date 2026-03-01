@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 
@@ -136,7 +137,7 @@ class AudioRecorderService : Service() {
         var silenceFrames = 0
         val maxSilenceFrames = 10 // ~1 second of silence triggers transcription
 
-        while (isActive && isRecording) {
+        while (currentCoroutineContext().isActive && isRecording) {
             val read = audioRecord?.read(buffer, 0, chunkSamples, AudioRecord.READ_NON_BLOCKING) ?: break
             if (read <= 0) continue
 
