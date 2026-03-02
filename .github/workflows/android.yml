@@ -120,19 +120,41 @@ jobs:
           echo "=== AAR in libs ==="
           ls -lh app/libs/
 
-      - name: Build Debug APK
-        run: ./gradlew clean assembleDebug --stacktrace
+      - name: Pre-build diagnostics
+        run: |
+          echo "=== Java version ==="
+          java -version
+          echo "=== Gradle wrapper version ==="
+          ./gradlew --version --no-daemon 2>&1 | head -20
+          echo "=== Android SDK ==="
+          ls -la $ANDROID_SDK_ROOT/platforms/ 2>/dev/null || echo "No platforms dir"
+          echo "=== app/libs ==="
+          ls -lh app/libs/ 2>/dev/null || echo "libs/ empty or missing"
+          echo "=== app/models ==="
+          find app/models -type f 2>/dev/null | sort || echo "No models"
 
-      - name: Upload APK artifact
+      - name: Build Debug APK
+        run: |
+          ./gradlew clean assembleDebug --no-build-cache --no-daemon --stacktrace --refresh-dependencies \
+            2>&1 | tee /tmp/gradle-build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: build-outputs
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            /tmp/gradle-build.log
           retention-days: 14
+          if-no-files-found: warn
 
       - name: Show build output on failure
         if: failure()
         run: |
-          echo "=== BUILD FAILED — Full Gradle output above ==="
-          find . -name "*.log" -newer gradlew -exec echo "--- {} ---" \; -exec cat {} \; 2>/dev/null || true
+          echo "=== GRADLE BUILD LOG — First 200 lines ==="
+          head -200 /tmp/gradle-build.log 2>/dev/null || echo "(no log captured)"
+          echo ""
+          echo "=== GRADLE BUILD LOG — Last 200 lines ==="
+          tail -200 /tmp/gradle-build.log 2>/dev/null || echo "(no log captured)"
