@@ -184,7 +184,7 @@ fun LiveScreen(
                         trailingIcon  = {
                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = langDropExpanded)
                         },
-                        modifier      = Modifier.menuAnchor().fillMaxWidth(),
+                        modifier      = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
                         colors        = OutlinedTextFieldDefaults.colors(
                             unfocusedBorderColor       = AppTheme.Colors.chipBorder,
                             focusedBorderColor         = AppTheme.Colors.accentCyan,

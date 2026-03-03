@@ -3,7 +3,9 @@ package com.livetranscript.settings
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 
 class SettingsRepository(private val context: Context) {
 
@@ -39,5 +41,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setTranscriptionLanguage(code: String) {
         context.settingsDataStore.edit { it[PreferenceKeys.TRANSCRIPTION_LANGUAGE] = code }
+    }
+
+    /** Synchronous read used during service initialisation (called before coroutines are set up). */
+    fun getLanguageSync(): String = runBlocking {
+        context.settingsDataStore.data.first()[PreferenceKeys.TRANSCRIPTION_LANGUAGE] ?: ""
     }
 }
