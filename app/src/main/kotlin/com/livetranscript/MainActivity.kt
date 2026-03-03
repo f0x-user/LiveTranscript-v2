@@ -23,8 +23,10 @@ import com.livetranscript.audio.AudioRecorderService
 import com.livetranscript.models.ModelAssetManager
 import com.livetranscript.settings.SettingsViewModel
 import com.livetranscript.ui.LiveScreen
+import com.livetranscript.ui.LocalStrings
 import com.livetranscript.ui.SettingsScreen
 import com.livetranscript.ui.TranscriptEntry
+import com.livetranscript.ui.stringsForLanguage
 import com.livetranscript.ui.theme.LiveTranscript2Theme
 
 class MainActivity : ComponentActivity() {
@@ -81,24 +83,31 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settingsState by settingsViewModel.uiState.collectAsState()
 
+            // App UI language follows the selected transcription language
+            val appStrings = stringsForLanguage(settingsState.transcriptionLanguage)
+
             LiveTranscript2Theme(themeMode = settingsState.themeMode) {
-                Scaffold(modifier = Modifier.fillMaxSize()) { _ ->
-                    when (currentScreen) {
-                        "settings" -> SettingsScreen(
-                            settingsViewModel = settingsViewModel,
-                            onBack = { currentScreen = "main" },
-                        )
-                        else -> LiveScreen(
-                            isRecording = isRecording,
-                            transcripts = transcripts,
-                            modelsReady = modelsReady,
-                            autoScroll = settingsState.autoScroll,
-                            showTimestamps = settingsState.showTimestamps,
-                            onStartRecording = { startRecording() },
-                            onStopRecording = { stopRecording() },
-                            onClear = { transcripts.clear() },
-                            onOpenSettings = { currentScreen = "settings" },
-                        )
+                CompositionLocalProvider(LocalStrings provides appStrings) {
+                    Scaffold(modifier = Modifier.fillMaxSize()) { _ ->
+                        when (currentScreen) {
+                            "settings" -> SettingsScreen(
+                                settingsViewModel = settingsViewModel,
+                                onBack            = { currentScreen = "main" },
+                            )
+                            else -> LiveScreen(
+                                isRecording           = isRecording,
+                                transcripts           = transcripts,
+                                modelsReady           = modelsReady,
+                                autoScroll            = settingsState.autoScroll,
+                                showTimestamps        = settingsState.showTimestamps,
+                                transcriptionLanguage = settingsState.transcriptionLanguage,
+                                onLanguageChange      = { settingsViewModel.setLanguage(it) },
+                                onStartRecording      = { startRecording() },
+                                onStopRecording       = { stopRecording() },
+                                onClear               = { transcripts.clear() },
+                                onOpenSettings        = { currentScreen = "settings" },
+                            )
+                        }
                     }
                 }
             }
@@ -123,13 +132,9 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, AudioRecorderService::class.java)
         startForegroundService(intent)
         bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-        // Check if models are ready after a short delay (service copies them on start)
         android.os.Handler(mainLooper).postDelayed({
             modelsReady = ModelAssetManager.allModelsReady(this)
-            if (!modelsReady) {
-                // Keep checking until ready
-                checkModelsReady()
-            }
+            if (!modelsReady) checkModelsReady()
         }, 2000)
     }
 

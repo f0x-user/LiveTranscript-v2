@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -27,17 +27,18 @@ fun SettingsScreen(
 ) {
     BackHandler { onBack() }
 
-    val state by settingsViewModel.uiState.collectAsState()
+    val state   by settingsViewModel.uiState.collectAsState()
+    val strings = LocalStrings.current
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Einstellungen") },
+                title = { Text(strings.settingsTitle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.Filled.ArrowBack,
-                            contentDescription = "Zurueck",
+                            imageVector        = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Zurück",
                         )
                     }
                 },
@@ -53,52 +54,51 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
 
-            // -- Theme --------------------------------------------------------
-            SectionHeader("Erscheinungsbild")
+            // ── Appearance ────────────────────────────────────────────────
+            SectionHeader(strings.appearance)
 
-            ThemeMode.entries.forEach { mode ->
-                val label = when (mode) {
-                    ThemeMode.LIGHT  -> "Hell"
-                    ThemeMode.DARK   -> "Dunkel"
-                    ThemeMode.SYSTEM -> "System (automatisch)"
-                }
+            listOf(
+                ThemeMode.LIGHT  to strings.themeLight,
+                ThemeMode.DARK   to strings.themeDark,
+                ThemeMode.SYSTEM to strings.themeSystem,
+            ).forEach { (mode, label) ->
                 OptionRow(
-                    label = label,
+                    label    = label,
                     selected = state.themeMode == mode,
-                    onClick = { settingsViewModel.setTheme(mode) },
+                    onClick  = { settingsViewModel.setTheme(mode) },
                 )
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-            // -- Transcript ---------------------------------------------------
-            SectionHeader("Transkript")
+            // ── Transcript ────────────────────────────────────────────────
+            SectionHeader(strings.transcript)
 
             SwitchRow(
-                label = "Automatisch scrollen",
-                description = "Scrollt automatisch zum neuesten Eintrag",
-                checked = state.autoScroll,
+                label         = strings.autoScroll,
+                description   = strings.autoScrollDesc,
+                checked       = state.autoScroll,
                 onCheckedChange = { settingsViewModel.setAutoScroll(it) },
             )
 
             SwitchRow(
-                label = "Zeitstempel anzeigen",
-                description = "Zeigt die Uhrzeit neben jedem Eintrag",
-                checked = state.showTimestamps,
+                label         = strings.showTimestamps,
+                description   = strings.showTimestampsDesc,
+                checked       = state.showTimestamps,
                 onCheckedChange = { settingsViewModel.setShowTimestamps(it) },
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-            // -- Info ---------------------------------------------------------
-            SectionHeader("Info")
+            // ── Info ──────────────────────────────────────────────────────
+            SectionHeader(strings.info)
             Text(
-                text = "LiveTranscript v1.0",
+                text  = "LiveTranscript v1.0",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "Whisper Tiny (English) + WeSpeaker Diarization",
+                text  = "Whisper Tiny + WeSpeaker Diarization",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -111,11 +111,11 @@ fun SettingsScreen(
 @Composable
 private fun SectionHeader(title: String) {
     Text(
-        text = title,
+        text       = title,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 13.sp,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+        fontSize   = 13.sp,
+        color      = MaterialTheme.colorScheme.primary,
+        modifier   = Modifier.padding(top = 8.dp, bottom = 4.dp),
     )
 }
 
@@ -123,7 +123,7 @@ private fun SectionHeader(title: String) {
 private fun OptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier          = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 2.dp),
@@ -143,7 +143,7 @@ private fun SwitchRow(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier          = Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
             .padding(vertical = 6.dp),

@@ -14,6 +14,7 @@ data class SettingsUiState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val autoScroll: Boolean = true,
     val showTimestamps: Boolean = false,
+    val transcriptionLanguage: String = "",
 )
 
 class SettingsViewModel(
@@ -24,21 +25,24 @@ class SettingsViewModel(
         repository.themeMode,
         repository.autoScroll,
         repository.showTimestamps,
-    ) { theme, scroll, timestamps ->
+        repository.transcriptionLanguage,
+    ) { theme, scroll, timestamps, language ->
         SettingsUiState(
-            themeMode = theme,
-            autoScroll = scroll,
-            showTimestamps = timestamps,
+            themeMode             = theme,
+            autoScroll            = scroll,
+            showTimestamps        = timestamps,
+            transcriptionLanguage = language,
         )
     }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
+        scope        = viewModelScope,
+        started      = SharingStarted.Eagerly,
         initialValue = SettingsUiState(),
     )
 
-    fun setTheme(mode: ThemeMode) = viewModelScope.launch { repository.setThemeMode(mode) }
-    fun setAutoScroll(enabled: Boolean) = viewModelScope.launch { repository.setAutoScroll(enabled) }
+    fun setTheme(mode: ThemeMode)        = viewModelScope.launch { repository.setThemeMode(mode) }
+    fun setAutoScroll(enabled: Boolean)  = viewModelScope.launch { repository.setAutoScroll(enabled) }
     fun setShowTimestamps(enabled: Boolean) = viewModelScope.launch { repository.setShowTimestamps(enabled) }
+    fun setLanguage(code: String)        = viewModelScope.launch { repository.setTranscriptionLanguage(code) }
 
     class Factory(private val context: Context) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

@@ -21,6 +21,10 @@ class SettingsRepository(private val context: Context) {
         prefs[PreferenceKeys.SHOW_TIMESTAMPS] ?: false
     }
 
+    val transcriptionLanguage: Flow<String> = context.settingsDataStore.data.map { prefs ->
+        prefs[PreferenceKeys.TRANSCRIPTION_LANGUAGE] ?: ""
+    }
+
     suspend fun setThemeMode(mode: ThemeMode) {
         context.settingsDataStore.edit { it[PreferenceKeys.THEME_MODE] = mode.name }
     }
@@ -31,5 +35,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setShowTimestamps(enabled: Boolean) {
         context.settingsDataStore.edit { it[PreferenceKeys.SHOW_TIMESTAMPS] = enabled }
+    }
+
+    suspend fun setTranscriptionLanguage(code: String) {
+        context.settingsDataStore.edit { it[PreferenceKeys.TRANSCRIPTION_LANGUAGE] = code }
     }
 }

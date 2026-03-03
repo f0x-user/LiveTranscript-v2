@@ -13,7 +13,30 @@ enum class ThemeMode { LIGHT, DARK, SYSTEM }
 val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 object PreferenceKeys {
-    val THEME_MODE = stringPreferencesKey("theme_mode")
-    val AUTO_SCROLL = booleanPreferencesKey("auto_scroll")
-    val SHOW_TIMESTAMPS = booleanPreferencesKey("show_timestamps")
+    val THEME_MODE             = stringPreferencesKey("theme_mode")
+    val AUTO_SCROLL            = booleanPreferencesKey("auto_scroll")
+    val SHOW_TIMESTAMPS        = booleanPreferencesKey("show_timestamps")
+    val TRANSCRIPTION_LANGUAGE = stringPreferencesKey("transcription_language")
 }
+
+/**
+ * Language code → display name pairs shown in the language picker.
+ * Empty string = auto-detect.
+ */
+val LANGUAGE_OPTIONS: List<Pair<String, String>> = listOf(
+    ""   to "Auto",
+    "de" to "Deutsch",
+    "en" to "English",
+    "fr" to "Français",
+    "es" to "Español",
+    "it" to "Italiano",
+    "pt" to "Português",
+    "tr" to "Türkçe",
+    "nl" to "Nederlands",
+    "pl" to "Polski",
+    "ru" to "Русский",
+    "zh" to "中文",
+    "ja" to "日本語",
+    "ko" to "한국어",
+    "ar" to "العربية",
+)
