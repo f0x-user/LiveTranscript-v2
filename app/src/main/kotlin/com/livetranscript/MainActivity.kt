@@ -18,9 +18,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
 import com.livetranscript.audio.AudioRecorderService
 import com.livetranscript.models.ModelAssetManager
+import com.livetranscript.settings.SettingsViewModel
 import com.livetranscript.ui.LiveScreen
+import com.livetranscript.ui.SettingsScreen
 import com.livetranscript.ui.TranscriptEntry
 import com.livetranscript.ui.theme.LiveTranscript2Theme
 
@@ -32,6 +35,8 @@ class MainActivity : ComponentActivity() {
     private val transcripts = mutableStateListOf<TranscriptEntry>()
     private var isRecording by mutableStateOf(false)
     private var modelsReady by mutableStateOf(false)
+    private var currentScreen by mutableStateOf("main")
+    private lateinit var settingsViewModel: SettingsViewModel
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -68,17 +73,33 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        settingsViewModel = ViewModelProvider(
+            this,
+            SettingsViewModel.Factory(applicationContext),
+        )[SettingsViewModel::class.java]
+
         setContent {
-            LiveTranscript2Theme {
+            val settingsState by settingsViewModel.uiState.collectAsState()
+
+            LiveTranscript2Theme(themeMode = settingsState.themeMode) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { _ ->
-                    LiveScreen(
-                        isRecording = isRecording,
-                        transcripts = transcripts,
-                        modelsReady = modelsReady,
-                        onStartRecording = { startRecording() },
-                        onStopRecording = { stopRecording() },
-                        onClear = { transcripts.clear() }
-                    )
+                    when (currentScreen) {
+                        "settings" -> SettingsScreen(
+                            settingsViewModel = settingsViewModel,
+                            onBack = { currentScreen = "main" },
+                        )
+                        else -> LiveScreen(
+                            isRecording = isRecording,
+                            transcripts = transcripts,
+                            modelsReady = modelsReady,
+                            autoScroll = settingsState.autoScroll,
+                            showTimestamps = settingsState.showTimestamps,
+                            onStartRecording = { startRecording() },
+                            onStopRecording = { stopRecording() },
+                            onClear = { transcripts.clear() },
+                            onOpenSettings = { currentScreen = "settings" },
+                        )
+                    }
                 }
             }
         }

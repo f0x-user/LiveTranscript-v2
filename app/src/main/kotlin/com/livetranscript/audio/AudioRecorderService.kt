@@ -133,9 +133,9 @@ class AudioRecorderService : Service() {
         val chunkSamples = CHUNK_SIZE_SAMPLES
         val buffer = FloatArray(chunkSamples)
         val accumulator = mutableListOf<Float>()
-        val silenceThreshold = 0.01f
+        val silenceThreshold = 0.015f
         var silenceFrames = 0
-        val maxSilenceFrames = 10 // ~1 second of silence triggers transcription
+        val maxSilenceFrames = 15 // ~1.5 seconds of silence triggers transcription
 
         while (currentCoroutineContext().isActive && isRecording) {
             val read = audioRecord?.read(buffer, 0, chunkSamples, AudioRecord.READ_NON_BLOCKING) ?: break
@@ -226,6 +226,6 @@ class AudioRecorderService : Service() {
         private const val CHUNK_SIZE_SAMPLES = 4096
         private const val CHUNK_SIZE_BYTES = CHUNK_SIZE_SAMPLES * 4 // float = 4 bytes
         private const val MAX_ACCUMULATOR_SAMPLES = SAMPLE_RATE * 10 // 10 seconds max
-        private const val MIN_SAMPLES_FOR_TRANSCRIPTION = SAMPLE_RATE / 2 // 0.5 seconds min
+        private const val MIN_SAMPLES_FOR_TRANSCRIPTION = SAMPLE_RATE * 3 / 2 // 1.5 seconds min
     }
 }

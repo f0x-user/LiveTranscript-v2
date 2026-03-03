@@ -6,6 +6,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,6 +17,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class TranscriptEntry(
     val speakerId: Int,
@@ -27,16 +32,19 @@ fun LiveScreen(
     isRecording: Boolean,
     transcripts: List<TranscriptEntry>,
     modelsReady: Boolean,
+    autoScroll: Boolean,
+    showTimestamps: Boolean,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
     // Auto-scroll to bottom on new entries
-    LaunchedEffect(transcripts.size) {
-        if (transcripts.isNotEmpty()) {
+    LaunchedEffect(transcripts.size, autoScroll) {
+        if (autoScroll && transcripts.isNotEmpty()) {
             coroutineScope.launch {
                 listState.animateScrollToItem(transcripts.size - 1)
             }
@@ -49,12 +57,26 @@ fun LiveScreen(
             .padding(16.dp)
     ) {
         // Header
-        Text(
-            text = "LiveTranscript",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "LiveTranscript",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(bottom = 8.dp),
+            )
+            IconButton(onClick = onOpenSettings, enabled = !isRecording) {
+                Icon(
+                    imageVector = Icons.Filled.Settings,
+                    contentDescription = "Einstellungen",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         // Status indicator
         Row(
@@ -108,7 +130,7 @@ fun LiveScreen(
                 }
             }
             items(transcripts) { entry ->
-                TranscriptBubble(entry = entry)
+                TranscriptBubble(entry = entry, showTimestamp = showTimestamps)
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
@@ -144,7 +166,7 @@ fun LiveScreen(
 }
 
 @Composable
-fun TranscriptBubble(entry: TranscriptEntry) {
+fun TranscriptBubble(entry: TranscriptEntry, showTimestamp: Boolean = false) {
     val speakerColors = listOf(
         Color(0xFF1976D2), // Blue
         Color(0xFF388E3C), // Green
@@ -156,13 +178,24 @@ fun TranscriptBubble(entry: TranscriptEntry) {
     val color = speakerColors[entry.speakerId % speakerColors.size]
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = if (entry.speakerId >= 0) "Speaker ${entry.speakerId + 1}" else "Unknown",
-            color = color,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (entry.speakerId >= 0) "Speaker ${entry.speakerId + 1}" else "Unknown",
+                color = color,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+            )
+            if (showTimestamp) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = formatTimestamp(entry.timestamp),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+            }
+        }
         Surface(
             shape = RoundedCornerShape(
                 topStart = 4.dp,
@@ -181,3 +214,6 @@ fun TranscriptBubble(entry: TranscriptEntry) {
         }
     }
 }
+
+private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+private fun formatTimestamp(millis: Long): String = timeFormat.format(Date(millis))

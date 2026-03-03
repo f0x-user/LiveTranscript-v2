@@ -12,12 +12,10 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
     override var isInitialized: Boolean = false
         private set
 
-    // Store embeddings for each known speaker
+    // Running-average embeddings and sample counts per speaker
     private val speakerEmbeddings = mutableListOf<FloatArray>()
+    private val speakerSampleCounts = mutableListOf<Int>()
     override val speakerCount: Int get() = speakerEmbeddings.size
-
-    // Cosine similarity threshold to decide if it's the same speaker
-    private val similarityThreshold = 0.6f
 
     override fun initialize() {
         if (isInitialized) return
@@ -41,36 +39,64 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
 
     override fun identifySpeaker(samples: FloatArray): Int {
         val ext = extractor ?: return -1
+        // Skip diarization for very short segments — embeddings are unreliable
+        if (samples.size < MIN_SAMPLES_FOR_EMBEDDING) return lastSpeakerId
+
         return try {
             val stream = ext.createStream()
             stream.acceptWaveform(samples, sampleRate = SAMPLE_RATE)
-            // Signal end of input before extracting embedding
             try { stream.inputFinished() } catch (_: Exception) {}
             val embedding = ext.compute(stream)
             stream.release()
 
-            // Compare against known speakers
+            // Find the BEST matching speaker (highest similarity above threshold)
+            var bestId = -1
+            var bestSim = SIMILARITY_THRESHOLD
             for (i in speakerEmbeddings.indices) {
                 val similarity = cosineSimilarity(embedding, speakerEmbeddings[i])
-                if (similarity >= similarityThreshold) {
-                    Log.d(TAG, "Speaker $i matched (similarity=$similarity)")
-                    return i
+                if (similarity >= bestSim) {
+                    bestSim = similarity
+                    bestId = i
                 }
             }
 
-            // New speaker
-            val newId = speakerEmbeddings.size
-            speakerEmbeddings.add(embedding)
-            Log.d(TAG, "New speaker detected: Speaker $newId (total: ${speakerEmbeddings.size})")
-            newId
+            if (bestId >= 0) {
+                // Update running average for matched speaker
+                updateEmbedding(bestId, embedding)
+                Log.d(TAG, "Speaker $bestId matched (similarity=$bestSim)")
+                lastSpeakerId = bestId
+                bestId
+            } else {
+                // Register new speaker
+                val newId = speakerEmbeddings.size
+                speakerEmbeddings.add(embedding.copyOf())
+                speakerSampleCounts.add(1)
+                Log.d(TAG, "New speaker: $newId (total: ${speakerEmbeddings.size})")
+                lastSpeakerId = newId
+                newId
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Speaker identification failed", e)
-            -1
+            lastSpeakerId
         }
+    }
+
+    /** Incrementally updates the running-average embedding for [speakerId]. */
+    private fun updateEmbedding(speakerId: Int, newEmbedding: FloatArray) {
+        val count = speakerSampleCounts[speakerId]
+        if (count >= MAX_EMBEDDING_SAMPLES) return // enough data, stop updating
+        val avg = speakerEmbeddings[speakerId]
+        val newCount = count + 1
+        for (i in avg.indices) {
+            avg[i] = (avg[i] * count + newEmbedding[i]) / newCount
+        }
+        speakerSampleCounts[speakerId] = newCount
     }
 
     override fun reset() {
         speakerEmbeddings.clear()
+        speakerSampleCounts.clear()
+        lastSpeakerId = 0
         Log.d(TAG, "Speaker diarizer reset")
     }
 
@@ -79,6 +105,7 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
         extractor = null
         isInitialized = false
         speakerEmbeddings.clear()
+        speakerSampleCounts.clear()
         Log.d(TAG, "Speaker diarizer released")
     }
 
@@ -99,5 +126,13 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
     companion object {
         private const val TAG = "SherpaSpeakerDiarizer"
         const val SAMPLE_RATE = 16000
+        /** Minimum audio length for a reliable embedding (~1.5 seconds) */
+        private const val MIN_SAMPLES_FOR_EMBEDDING = SAMPLE_RATE * 3 / 2
+        /** Lower threshold → less likely to create spurious new speakers */
+        private const val SIMILARITY_THRESHOLD = 0.45f
+        /** Stop updating average after this many samples to keep it stable */
+        private const val MAX_EMBEDDING_SAMPLES = 8
+        /** Fallback when segment is too short for diarization */
+        private var lastSpeakerId = 0
     }
 }

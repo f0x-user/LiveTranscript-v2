@@ -68,13 +68,30 @@ class SherpaOnnxAsrEngine(private val context: Context) : AsrEngine {
             stream.acceptWaveform(samples, sampleRate = SAMPLE_RATE)
             // OfflineStream has no inputFinished() — only OnlineStream does
             rec.decode(stream)
-            val result = rec.getResult(stream).text.trim()
+            val raw = rec.getResult(stream).text.trim()
             stream.release()
-            result.ifEmpty { null }
+            val cleaned = cleanTranscription(raw)
+            cleaned.ifEmpty { null }
         } catch (e: Exception) {
             Log.e(TAG, "Transcription failed", e)
             null
         }
+    }
+
+    /**
+     * Removes Whisper noise tokens like [BLANK_AUDIO], (silence), etc.
+     * and returns only actual speech content.
+     */
+    private fun cleanTranscription(text: String): String {
+        if (text.isBlank()) return ""
+        // Remove bracketed/parenthesised Whisper tokens: [BLANK_AUDIO], (silence), etc.
+        val cleaned = text
+            .replace(NOISE_TOKEN_REGEX, "")
+            .trim()
+        // Reject if nothing meaningful remains or only punctuation
+        if (cleaned.length < 2) return ""
+        if (cleaned.all { !it.isLetterOrDigit() }) return ""
+        return cleaned
     }
 
     override fun release() {
@@ -87,5 +104,10 @@ class SherpaOnnxAsrEngine(private val context: Context) : AsrEngine {
     companion object {
         private const val TAG = "SherpaOnnxAsrEngine"
         const val SAMPLE_RATE = 16000
+        /** Matches Whisper noise tokens like [BLANK_AUDIO], [ BLANK_AUDIO], (silence), <|nospeech|> etc. */
+        private val NOISE_TOKEN_REGEX = Regex(
+            """\[[\s]*BLANK[\s_]*AUDIO[\s]*]|\([\s]*silence[\s]*\)|<\|[^|]*\>|\[[\s]*SILENCE[\s]*]""",
+            RegexOption.IGNORE_CASE,
+        )
     }
 }
