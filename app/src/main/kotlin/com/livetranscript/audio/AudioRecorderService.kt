@@ -9,6 +9,8 @@ import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.Binder
 import android.os.IBinder
 import android.util.Log
@@ -18,12 +20,16 @@ import com.livetranscript.R
 import com.livetranscript.asr.SherpaOnnxAsrEngine
 import com.livetranscript.diarization.SherpaSpeakerDiarizer
 import com.livetranscript.models.ModelAssetManager
+import com.livetranscript.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class AudioRecorderService : Service() {
 
@@ -37,7 +43,12 @@ class AudioRecorderService : Service() {
     private var asrEngine: SherpaOnnxAsrEngine? = null
     private var diarizer: SherpaSpeakerDiarizer? = null
     private var audioRecord: AudioRecord? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var agcController: AutomaticGainControl? = null
     private var recordingJob: Job? = null
+
+    // Serializes ASR calls so only one segment is transcribed at a time.
+    private val asrMutex = Mutex()
 
     var isRecording = false
         private set
@@ -49,7 +60,6 @@ class AudioRecorderService : Service() {
         super.onCreate()
 
         // SCHRITT 1: Modelle kopieren — SYNCHRON, BLOCKIEREND
-        // sherpa-onnx darf erst DANACH initialisiert werden
         val modelsReady = ModelAssetManager.prepareModels(this)
         if (!modelsReady) {
             Log.e(TAG, "Models not ready — stopping")
@@ -57,7 +67,7 @@ class AudioRecorderService : Service() {
             return
         }
 
-        // SCHRITT 2: Erst jetzt sherpa-onnx initialisieren
+        // SCHRITT 2: sherpa-onnx initialisieren
         initializeSherpaOnnx()
 
         // SCHRITT 3: Foreground Service starten
@@ -68,18 +78,31 @@ class AudioRecorderService : Service() {
 
     private fun initializeSherpaOnnx() {
         try {
-            asrEngine = SherpaOnnxAsrEngine(this).also { it.initialize() }
+            val language = SettingsRepository(this).getLanguageSync()
+            asrEngine = SherpaOnnxAsrEngine(this, language).also { it.initialize() }
             diarizer = SherpaSpeakerDiarizer(this).also { it.initialize() }
-            Log.d(TAG, "SherpaOnnx initialized: ASR=${asrEngine?.isInitialized}, Diarizer=${diarizer?.isInitialized}")
+            Log.d(TAG, "SherpaOnnx initialized (lang=$language): ASR=${asrEngine?.isInitialized}, Diarizer=${diarizer?.isInitialized}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize SherpaOnnx", e)
+        }
+    }
+
+    /** Reinitialize ASR with a new language. Safe to call while not recording. */
+    fun reloadLanguage(language: String) {
+        if (isRecording) return
+        serviceScope.launch {
+            asrMutex.withLock {
+                asrEngine?.release()
+                asrEngine = SherpaOnnxAsrEngine(this@AudioRecorderService, language).also { it.initialize() }
+                Log.d(TAG, "ASR language reloaded: $language")
+            }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startRecording()
-            ACTION_STOP -> stopRecording()
+            ACTION_STOP  -> stopRecording()
         }
         return START_STICKY
     }
@@ -96,7 +119,9 @@ class AudioRecorderService : Service() {
         ).coerceAtLeast(CHUNK_SIZE_BYTES)
 
         audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            // VOICE_RECOGNITION applies device-side speech pre-processing
+            // (echo cancellation, beam-forming on supported devices)
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_FLOAT,
@@ -108,9 +133,21 @@ class AudioRecorderService : Service() {
             return
         }
 
+        val sessionId = audioRecord!!.audioSessionId
+
+        // Hardware noise suppressor — reduces wind, HVAC, keyboard noise
+        noiseSuppressor = if (NoiseSuppressor.isAvailable()) {
+            NoiseSuppressor.create(sessionId)?.also { it.enabled = true }
+        } else null
+
+        // Automatic gain control — boosts quiet voices (table-distance recording)
+        agcController = if (AutomaticGainControl.isAvailable()) {
+            AutomaticGainControl.create(sessionId)?.also { it.enabled = true }
+        } else null
+
         audioRecord?.startRecording()
         isRecording = true
-        Log.d(TAG, "Recording started")
+        Log.d(TAG, "Recording started — NoiseSuppressor=${noiseSuppressor != null}, AGC=${agcController != null}")
 
         recordingJob = serviceScope.launch {
             processAudioLoop()
@@ -122,6 +159,10 @@ class AudioRecorderService : Service() {
         isRecording = false
         recordingJob?.cancel()
         recordingJob = null
+        noiseSuppressor?.release()
+        noiseSuppressor = null
+        agcController?.release()
+        agcController = null
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
@@ -129,50 +170,68 @@ class AudioRecorderService : Service() {
     }
 
     private suspend fun processAudioLoop() {
-        val chunkSamples = CHUNK_SIZE_SAMPLES
-        val buffer = FloatArray(chunkSamples)
+        val buffer = FloatArray(CHUNK_SIZE_SAMPLES)
         val accumulator = mutableListOf<Float>()
-        val silenceThreshold = 0.01f
-        var silenceFrames = 0
-        val maxSilenceFrames = 10 // ~1 second of silence triggers transcription
 
-        while (isActive && isRecording) {
-            val read = audioRecord?.read(buffer, 0, chunkSamples, AudioRecord.READ_NON_BLOCKING) ?: break
+        // Thresholds calibrated for VOICE_RECOGNITION source + AGC:
+        //   Suppressed ambient/wind → RMS ≈ 0.001–0.005
+        //   Normal speech (even from a table, ~50 cm) → RMS ≈ 0.008–0.15
+        val voiceThreshold   = 0.008f  // Counts as active voice
+        val silenceThreshold = 0.003f  // Below this = silence
+        var silenceFrames    = 0
+        var voiceFrames      = 0       // Chunks with voice-level energy in this segment
+        val maxSilenceFrames = 6       // 6 × 256 ms ≈ 1.5 s silence → send to ASR
+
+        while (currentCoroutineContext().isActive && isRecording) {
+            val read = audioRecord?.read(buffer, 0, CHUNK_SIZE_SAMPLES, AudioRecord.READ_BLOCKING) ?: break
             if (read <= 0) continue
 
             val chunk = buffer.take(read)
             accumulator.addAll(chunk)
 
-            // Check for silence to detect end of utterance
             val rms = chunk.map { it * it }.average().let { Math.sqrt(it).toFloat() }
-            if (rms < silenceThreshold) {
-                silenceFrames++
-            } else {
-                silenceFrames = 0
+
+            when {
+                rms >= voiceThreshold  -> { voiceFrames++; silenceFrames = 0 }
+                rms < silenceThreshold -> silenceFrames++
+                else                   -> silenceFrames = 0  // Transition zone
             }
 
-            // Process after silence or buffer full
-            if ((silenceFrames >= maxSilenceFrames || accumulator.size >= MAX_ACCUMULATOR_SAMPLES)
-                && accumulator.size >= MIN_SAMPLES_FOR_TRANSCRIPTION) {
+            val enoughSilence = silenceFrames >= maxSilenceFrames
+            val bufferFull    = accumulator.size >= MAX_ACCUMULATOR_SAMPLES
 
-                val samples = accumulator.toFloatArray()
-                accumulator.clear()
-                silenceFrames = 0
-
-                processSegment(samples)
+            if ((enoughSilence || bufferFull) && accumulator.size >= MIN_SAMPLES_FOR_TRANSCRIPTION) {
+                if (voiceFrames >= MIN_VOICE_FRAMES) {
+                    val samples = accumulator.toFloatArray()
+                    accumulator.clear()
+                    voiceFrames   = 0
+                    silenceFrames = 0
+                    // Launch ASR in background so audio recording continues uninterrupted.
+                    // asrMutex ensures segments are processed one at a time (ASR is not thread-safe).
+                    serviceScope.launch {
+                        asrMutex.withLock { processSegment(samples) }
+                    }
+                } else {
+                    Log.d(TAG, "Discarding segment — only noise (voiceFrames=$voiceFrames)")
+                    accumulator.clear()
+                    voiceFrames   = 0
+                    silenceFrames = 0
+                }
             }
         }
 
-        // Process any remaining audio
-        if (accumulator.size >= MIN_SAMPLES_FOR_TRANSCRIPTION) {
-            processSegment(accumulator.toFloatArray())
+        // Drain remaining audio when recording stops
+        if (accumulator.size >= MIN_SAMPLES_FOR_TRANSCRIPTION && voiceFrames >= MIN_VOICE_FRAMES) {
+            val samples = accumulator.toFloatArray()
+            serviceScope.launch {
+                asrMutex.withLock { processSegment(samples) }
+            }
         }
     }
 
     private fun processSegment(samples: FloatArray) {
         val speakerId = diarizer?.identifySpeaker(samples) ?: -1
         val text = asrEngine?.transcribe(samples)
-
         if (!text.isNullOrBlank()) {
             Log.d(TAG, "Speaker $speakerId: $text")
             onTranscriptionResult?.invoke(speakerId, text)
@@ -191,22 +250,16 @@ class AudioRecorderService : Service() {
         val channelId = "livetranscript_channel"
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (manager.getNotificationChannel(channelId) == null) {
-            val channel = NotificationChannel(
-                channelId,
-                "LiveTranscript Recording",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Live transcription in progress"
-            }
-            manager.createNotificationChannel(channel)
+            manager.createNotificationChannel(
+                NotificationChannel(channelId, "LiveTranscript Recording", NotificationManager.IMPORTANCE_LOW)
+                    .apply { description = "Live transcription in progress" }
+            )
         }
-
         val pendingIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
         )
-
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("LiveTranscript")
             .setContentText("Recording and transcribing...")
@@ -218,13 +271,14 @@ class AudioRecorderService : Service() {
 
     companion object {
         private const val TAG = "AudioRecorderService"
-        const val ACTION_START = "com.livetranscript.START_RECORDING"
-        const val ACTION_STOP = "com.livetranscript.STOP_RECORDING"
+        const val ACTION_START  = "com.livetranscript.START_RECORDING"
+        const val ACTION_STOP   = "com.livetranscript.STOP_RECORDING"
         private const val NOTIFICATION_ID = 1001
         const val SAMPLE_RATE = 16000
-        private const val CHUNK_SIZE_SAMPLES = 4096
-        private const val CHUNK_SIZE_BYTES = CHUNK_SIZE_SAMPLES * 4 // float = 4 bytes
-        private const val MAX_ACCUMULATOR_SAMPLES = SAMPLE_RATE * 10 // 10 seconds max
-        private const val MIN_SAMPLES_FOR_TRANSCRIPTION = SAMPLE_RATE / 2 // 0.5 seconds min
+        private const val CHUNK_SIZE_SAMPLES = 4096          // ≈ 256 ms per chunk
+        private const val CHUNK_SIZE_BYTES   = CHUNK_SIZE_SAMPLES * 4
+        private const val MAX_ACCUMULATOR_SAMPLES        = SAMPLE_RATE * 4      // 4 s max per segment
+        private const val MIN_SAMPLES_FOR_TRANSCRIPTION  = SAMPLE_RATE * 3 / 4  // 0.75 s minimum
+        private const val MIN_VOICE_FRAMES = 1               // At least 1 voice chunk required
     }
 }
