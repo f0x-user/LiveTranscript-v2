@@ -9,7 +9,7 @@ import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.livetranscript.models.ModelAssetManager
 
-class SherpaOnnxAsrEngine(private val context: Context) : AsrEngine {
+class SherpaOnnxAsrEngine(private val context: Context, private val language: String = "de") : AsrEngine {
 
     private var recognizer: OfflineRecognizer? = null
     override var isInitialized: Boolean = false
@@ -19,19 +19,19 @@ class SherpaOnnxAsrEngine(private val context: Context) : AsrEngine {
         if (isInitialized) return
         try {
             val encoderPath = ModelAssetManager.getModelPath(
-                context, "whisper-tiny/tiny.en-encoder.int8.onnx"
+                context, "whisper-tiny/tiny-encoder.int8.onnx"
             )
             val decoderPath = ModelAssetManager.getModelPath(
-                context, "whisper-tiny/tiny.en-decoder.int8.onnx"
+                context, "whisper-tiny/tiny-decoder.int8.onnx"
             )
             val tokensPath = ModelAssetManager.getModelPath(
-                context, "whisper-tiny/tiny.en-tokens.txt"
+                context, "whisper-tiny/tiny-tokens.txt"
             )
 
             val whisperConfig = OfflineWhisperModelConfig(
                 encoder = encoderPath,
                 decoder = decoderPath,
-                language = "en",
+                language = language,
                 task = "transcribe"
             )
 

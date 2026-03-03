@@ -9,9 +9,9 @@ object ModelAssetManager {
     private const val TAG = "ModelAssetManager"
 
     private val REQUIRED_MODELS = listOf(
-        "whisper-tiny/tiny.en-encoder.int8.onnx",
-        "whisper-tiny/tiny.en-decoder.int8.onnx",
-        "whisper-tiny/tiny.en-tokens.txt",
+        "whisper-tiny/tiny-encoder.int8.onnx",
+        "whisper-tiny/tiny-decoder.int8.onnx",
+        "whisper-tiny/tiny-tokens.txt",
         "wespeaker/model.onnx"
     )
 
