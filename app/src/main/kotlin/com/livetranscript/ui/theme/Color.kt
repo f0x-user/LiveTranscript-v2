@@ -1,11 +1,15 @@
 package com.livetranscript.ui.theme
 
-import androidx.compose.ui.graphics.Color
+// All brand colours are defined in DesignTokens.kt → AppTheme.Colors.
+// This file re-exports the ones consumed by Theme.kt for convenience.
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+val NavyDark    = AppTheme.Colors.bgDeep
+val NavyMid     = AppTheme.Colors.bgMid
+val NavyLight   = AppTheme.Colors.bgLight
+val AccentBlue  = AppTheme.Colors.accentBlue
+val AccentCyan  = AppTheme.Colors.accentCyan
 
-val Purple40 = Color(0xFF6650A4)
-val PurpleGrey40 = Color(0xFF625B71)
-val Pink40 = Color(0xFF7D5260)
+// Settings-screen light theme (simple blue palette)
+val Blue40  = AppTheme.Colors.accentBlue
+val Blue80  = AppTheme.Colors.m3Secondary
+val Cyan40  = AppTheme.Colors.accentCyan

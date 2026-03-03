@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Save
@@ -27,14 +26,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.livetranscript.settings.LANGUAGE_OPTIONS
+import com.livetranscript.ui.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -52,23 +49,7 @@ data class TranscriptEntry(
     val timestamp: Long = System.currentTimeMillis(),
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Design tokens
-
-private val BgGradient = Brush.verticalGradient(
-    colors = listOf(Color(0xFF0A1929), Color(0xFF132B45), Color(0xFF1A3456)),
-)
-private val ChipBorder    = Color(0x33FFFFFF)
-private val WaveColor     = Color(0xFF4FC3F7)
-private val RecBtn        = Color(0xFFEF4444)
-private val TextPrimary   = Color.White
-private val TextSecondary = Color(0xFFB0BEC5)
-private val SpeakerColors = listOf(
-    Color(0xFF64B5F6), Color(0xFF81C784), Color(0xFFFFB74D),
-    Color(0xFFCE93D8), Color(0xFFEF9A9A), Color(0xFF4DD0E1),
-)
-
-// Flag emojis keyed by Whisper language code
+// Flag emoji keyed by Whisper language code
 private val LANG_FLAG = mapOf(
     ""   to "🌍", "de" to "🇩🇪", "en" to "🇬🇧", "fr" to "🇫🇷",
     "es" to "🇪🇸", "it" to "🇮🇹", "pt" to "🇵🇹", "tr" to "🇹🇷",
@@ -106,34 +87,39 @@ fun LiveScreen(
         }
     }
 
-    // Waveform – single atomic state update per tick to avoid 36 recompositions
-    var waveform by remember { mutableStateOf(FloatArray(36) { 0.12f }) }
+    // Waveform — single atomic state update per tick avoids per-bar recompositions
+    var waveform by remember { mutableStateOf(FloatArray(AppTheme.Dimens.waveformBars) { 0.12f }) }
     LaunchedEffect(isRecording) {
         while (isActive) {
             waveform = if (isRecording)
-                FloatArray(36) { (0.08f + Random.nextFloat() * 0.84f) }
+                FloatArray(AppTheme.Dimens.waveformBars) { 0.08f + Random.nextFloat() * 0.84f }
             else
-                FloatArray(36) { 0.12f }
-            delay(110)
+                FloatArray(AppTheme.Dimens.waveformBars) { 0.12f }
+            delay(AppTheme.Animation.waveformTickMs)
         }
     }
 
-    // Pulse rings around the record FAB
+    // Pulse rings around FAB (only while recording)
     val infiniteTransition = rememberInfiniteTransition(label = "rec-pulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.55f, targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(950, easing = LinearEasing), RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(
+            tween(AppTheme.Animation.pulseDurationMs, easing = LinearEasing),
+            RepeatMode.Restart,
+        ),
         label = "pulse-alpha",
     )
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = 1.85f,
-        animationSpec = infiniteRepeatable(tween(950, easing = LinearEasing), RepeatMode.Restart),
+        initialValue = 1f, targetValue = AppTheme.Dimens.pulseRingFactor,
+        animationSpec = infiniteRepeatable(
+            tween(AppTheme.Animation.pulseDurationMs, easing = LinearEasing),
+            RepeatMode.Restart,
+        ),
         label = "pulse-scale",
     )
 
-    // Dialog state
-    var showSaveDialog     by remember { mutableStateOf(false) }
-    var langDropExpanded   by remember { mutableStateOf(false) }
+    var showSaveDialog   by remember { mutableStateOf(false) }
+    var langDropExpanded by remember { mutableStateOf(false) }
 
     if (showSaveDialog) {
         SaveTranscriptDialog(
@@ -143,7 +129,8 @@ fun LiveScreen(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(BgGradient)) {
+    // Full-screen gradient — covers whole window including behind status bar
+    Box(modifier = Modifier.fillMaxSize().background(AppTheme.Gradients.background)) {
         Column(modifier = modifier.fillMaxSize().statusBarsPadding()) {
 
             // ── Top bar ───────────────────────────────────────────────────
@@ -155,16 +142,18 @@ fun LiveScreen(
             ) {
                 Text(
                     text       = strings.appTitle,
-                    fontSize   = 20.sp,
+                    fontSize   = AppTheme.TextSize.title,
                     fontWeight = FontWeight.Bold,
-                    color      = TextPrimary,
+                    color      = AppTheme.Colors.textPrimary,
                     modifier   = Modifier.weight(1f),
                 )
                 IconButton(onClick = onOpenSettings) {
                     Icon(
                         Icons.Filled.Settings,
                         contentDescription = strings.settings,
-                        tint = TextPrimary.copy(alpha = if (isRecording) 0.35f else 0.85f),
+                        tint = AppTheme.Colors.textPrimary.copy(
+                            alpha = if (isRecording) 0.35f else 0.85f,
+                        ),
                     )
                 }
             }
@@ -189,31 +178,40 @@ fun LiveScreen(
                         onValueChange = {},
                         readOnly      = true,
                         singleLine    = true,
-                        label         = { Text(strings.selectLanguage, fontSize = 12.sp) },
-                        trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = langDropExpanded) },
+                        label         = {
+                            Text(strings.selectLanguage, fontSize = AppTheme.TextSize.caption)
+                        },
+                        trailingIcon  = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = langDropExpanded)
+                        },
                         modifier      = Modifier.menuAnchor().fillMaxWidth(),
                         colors        = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor      = ChipBorder,
-                            focusedBorderColor        = Color(0xFF64B5F6),
-                            unfocusedTextColor        = TextPrimary,
-                            focusedTextColor          = TextPrimary,
-                            unfocusedLabelColor       = TextSecondary,
-                            focusedLabelColor         = Color(0xFF64B5F6),
-                            unfocusedTrailingIconColor = TextSecondary,
-                            focusedTrailingIconColor  = TextPrimary,
-                            unfocusedContainerColor   = Color.Transparent,
-                            focusedContainerColor     = Color(0x0AFFFFFF),
+                            unfocusedBorderColor       = AppTheme.Colors.chipBorder,
+                            focusedBorderColor         = AppTheme.Colors.accentCyan,
+                            unfocusedTextColor         = AppTheme.Colors.textPrimary,
+                            focusedTextColor           = AppTheme.Colors.textPrimary,
+                            unfocusedLabelColor        = AppTheme.Colors.textSecondary,
+                            focusedLabelColor          = AppTheme.Colors.accentCyan,
+                            unfocusedTrailingIconColor = AppTheme.Colors.textSecondary,
+                            focusedTrailingIconColor   = AppTheme.Colors.textPrimary,
+                            unfocusedContainerColor    = AppTheme.Colors.chipDefault,
+                            focusedContainerColor      = AppTheme.Colors.chipDefault,
                         ),
-                        textStyle = LocalTextStyle.current.copy(fontSize = 15.sp),
+                        textStyle = LocalTextStyle.current.copy(fontSize = AppTheme.TextSize.text),
                     )
                     ExposedDropdownMenu(
-                        expanded          = langDropExpanded,
-                        onDismissRequest  = { langDropExpanded = false },
-                        modifier          = Modifier.background(Color(0xFF1A3050)),
+                        expanded         = langDropExpanded,
+                        onDismissRequest = { langDropExpanded = false },
+                        modifier         = Modifier.background(AppTheme.Colors.dialog),
                     ) {
                         LANGUAGE_OPTIONS.forEach { (code, name) ->
                             DropdownMenuItem(
-                                text    = { Text("${LANG_FLAG[code] ?: "🌍"} $name", color = TextPrimary) },
+                                text    = {
+                                    Text(
+                                        "${LANG_FLAG[code] ?: "🌍"} $name",
+                                        color = AppTheme.Colors.textPrimary,
+                                    )
+                                },
                                 onClick = {
                                     onLanguageChange(code)
                                     langDropExpanded = false
@@ -226,7 +224,7 @@ fun LiveScreen(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Save button – enabled only when there is something to save
+                // Save — active only when the transcript has entries
                 IconButton(
                     onClick  = { showSaveDialog = true },
                     enabled  = transcripts.isNotEmpty(),
@@ -235,26 +233,31 @@ fun LiveScreen(
                     Icon(
                         Icons.Filled.Save,
                         contentDescription = strings.save,
-                        tint = if (transcripts.isNotEmpty()) TextPrimary
-                               else TextSecondary.copy(alpha = 0.35f),
+                        tint = if (transcripts.isNotEmpty())
+                            AppTheme.Colors.textPrimary
+                        else
+                            AppTheme.Colors.textSecondary.copy(alpha = 0.35f),
                     )
                 }
             }
 
-            // ── Waveform / empty hint ─────────────────────────────────────
+            // ── Waveform / empty-state hint ───────────────────────────────
             if (isRecording) {
                 Text(
                     text       = strings.liveTranscriptionRunning,
-                    fontSize   = 13.sp,
+                    fontSize   = AppTheme.TextSize.body,
                     fontWeight = FontWeight.Medium,
-                    color      = TextPrimary.copy(alpha = 0.85f),
-                    modifier   = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    color      = AppTheme.Colors.textPrimary.copy(alpha = 0.85f),
+                    modifier   = Modifier.padding(
+                        horizontal = AppTheme.Dimens.waveformPaddingH,
+                        vertical   = 4.dp,
+                    ),
                 )
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp)
-                        .padding(horizontal = 20.dp),
+                        .height(AppTheme.Dimens.waveformHeight)
+                        .padding(horizontal = AppTheme.Dimens.waveformPaddingH),
                 ) {
                     val count   = waveform.size
                     val spacing = size.width / count
@@ -262,7 +265,7 @@ fun LiveScreen(
                     for (i in 0 until count) {
                         val h = (waveform[i] * size.height).coerceAtLeast(3f)
                         drawRoundRect(
-                            color        = WaveColor,
+                            color        = AppTheme.Colors.accentCyan,
                             topLeft      = Offset(i * spacing + spacing * 0.24f, (size.height - h) / 2f),
                             size         = Size(barW, h),
                             cornerRadius = CornerRadius(barW / 2f),
@@ -276,8 +279,8 @@ fun LiveScreen(
                 ) {
                     Text(
                         text      = if (modelsReady) strings.startToBegin else strings.modelsLoading,
-                        color     = TextSecondary,
-                        fontSize  = 14.sp,
+                        color     = AppTheme.Colors.textSecondary,
+                        fontSize  = AppTheme.TextSize.text,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -303,7 +306,7 @@ fun LiveScreen(
                 }
             }
 
-            // ── Record button + status ────────────────────────────────────
+            // ── Record FAB + status ───────────────────────────────────────
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -312,17 +315,23 @@ fun LiveScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    // Animated pulse ring (recording only)
+                    // Animated pulse rings (recording only)
                     if (isRecording) {
                         Box(
                             modifier = Modifier
-                                .size((72 * pulseScale).dp)
-                                .background(RecBtn.copy(alpha = pulseAlpha * 0.45f), CircleShape),
+                                .size((AppTheme.Dimens.fabSize.value * pulseScale).dp)
+                                .background(
+                                    AppTheme.Colors.recordPulse.copy(alpha = pulseAlpha * 0.45f),
+                                    CircleShape,
+                                ),
                         )
                         Box(
                             modifier = Modifier
-                                .size(86.dp)
-                                .background(RecBtn.copy(alpha = 0.18f), CircleShape),
+                                .size(AppTheme.Dimens.pulseRingInner)
+                                .background(
+                                    AppTheme.Colors.recordPulse.copy(alpha = 0.18f),
+                                    CircleShape,
+                                ),
                         )
                     }
 
@@ -331,17 +340,19 @@ fun LiveScreen(
                             if (!modelsReady) return@FloatingActionButton
                             if (isRecording) onStopRecording() else onStartRecording()
                         },
-                        modifier       = Modifier.size(68.dp),
-                        containerColor = if (modelsReady) RecBtn else Color(0xFF546E7A),
-                        contentColor   = TextPrimary,
+                        modifier       = Modifier.size(AppTheme.Dimens.fabSize),
+                        containerColor = if (modelsReady) AppTheme.Colors.recordActive
+                                         else AppTheme.Colors.recordInactive,
+                        contentColor   = AppTheme.Colors.textPrimary,
                         elevation      = FloatingActionButtonDefaults.elevation(
                             defaultElevation = if (isRecording) 10.dp else 4.dp,
                         ),
                     ) {
                         Icon(
-                            imageVector        = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
-                            contentDescription = if (isRecording) strings.stopRecording else strings.startRecording,
-                            modifier           = Modifier.size(30.dp),
+                            imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                            contentDescription = if (isRecording) strings.stopRecording
+                                                 else strings.startRecording,
+                            modifier = Modifier.size(AppTheme.Dimens.fabIconSize),
                         )
                     }
                 }
@@ -354,8 +365,9 @@ fun LiveScreen(
                         isRecording  -> strings.recordingRunning
                         else         -> strings.ready
                     },
-                    color      = if (isRecording) Color(0xFFEF9A9A) else TextSecondary,
-                    fontSize   = 13.sp,
+                    color      = if (isRecording) AppTheme.Colors.recordingLabel
+                                 else AppTheme.Colors.textSecondary,
+                    fontSize   = AppTheme.TextSize.body,
                     fontWeight = if (isRecording) FontWeight.SemiBold else FontWeight.Normal,
                 )
 
@@ -364,10 +376,10 @@ fun LiveScreen(
                     TextButton(
                         onClick = onClear,
                         colors  = ButtonDefaults.textButtonColors(
-                            contentColor = TextSecondary.copy(alpha = 0.6f),
+                            contentColor = AppTheme.Colors.textSecondary.copy(alpha = 0.6f),
                         ),
                     ) {
-                        Text(strings.deleteAll, fontSize = 12.sp)
+                        Text(strings.deleteAll, fontSize = AppTheme.TextSize.caption)
                     }
                 }
             }
@@ -385,40 +397,46 @@ fun TranscriptBubble(
     speakerLabel: String   = "Speaker",
     unknownLabel: String   = "Unknown",
 ) {
-    val color = SpeakerColors[entry.speakerId.coerceAtLeast(0) % SpeakerColors.size]
+    val color = AppTheme.Colors.speakers[
+        entry.speakerId.coerceAtLeast(0) % AppTheme.Colors.speakers.size
+    ]
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier          = Modifier.padding(bottom = 2.dp),
         ) {
-            Box(modifier = Modifier.size(6.dp).background(color, CircleShape))
+            Box(
+                modifier = Modifier
+                    .size(AppTheme.Dimens.speakerDot)
+                    .background(color, CircleShape),
+            )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text       = if (entry.speakerId >= 0) "$speakerLabel ${entry.speakerId + 1}"
                              else unknownLabel,
                 color      = color,
                 fontWeight = FontWeight.SemiBold,
-                fontSize   = 11.sp,
+                fontSize   = AppTheme.TextSize.label,
             )
             if (showTimestamp) {
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text     = formatTimestamp(entry.timestamp),
-                    fontSize = 10.sp,
-                    color    = TextSecondary.copy(alpha = 0.5f),
+                    fontSize = AppTheme.TextSize.micro,
+                    color    = AppTheme.Colors.textSecondary.copy(alpha = 0.5f),
                 )
             }
         }
         Surface(
-            shape = RoundedCornerShape(4.dp, 12.dp, 12.dp, 12.dp),
-            color = Color(0x1AFFFFFF),
+            shape = AppTheme.Shapes.bubble,
+            color = AppTheme.Colors.surface,
         ) {
             Text(
                 text       = entry.text,
-                color      = TextPrimary.copy(alpha = 0.92f),
-                fontSize   = 15.sp,
-                lineHeight = 22.sp,
+                color      = AppTheme.Colors.textPrimary.copy(alpha = 0.92f),
+                fontSize   = AppTheme.TextSize.text,
+                lineHeight = AppTheme.TextSize.subtitle,
                 modifier   = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
@@ -438,14 +456,15 @@ private fun SaveTranscriptDialog(
 
     AlertDialog(
         onDismissRequest  = onDismiss,
-        containerColor    = Color(0xFF1A3050),
-        titleContentColor = TextPrimary,
-        textContentColor  = TextSecondary,
+        containerColor    = AppTheme.Colors.dialog,
+        titleContentColor = AppTheme.Colors.textPrimary,
+        textContentColor  = AppTheme.Colors.textSecondary,
         title = { Text(strings.saveTranscript, fontWeight = FontWeight.SemiBold) },
         text  = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(strings.selectFormat, style = MaterialTheme.typography.labelMedium)
                 Spacer(modifier = Modifier.height(2.dp))
+
                 listOf(
                     SaveFormat.TXT  to (strings.formatTxt  to strings.formatTxtDesc),
                     SaveFormat.CSV  to (strings.formatCsv  to strings.formatCsvDesc),
@@ -459,18 +478,26 @@ private fun SaveTranscriptDialog(
                             onDismiss()
                         },
                         modifier       = Modifier.fillMaxWidth(),
-                        border         = BorderStroke(1.dp, ChipBorder),
+                        border         = BorderStroke(1.dp, AppTheme.Colors.chipBorder),
                         colors         = ButtonDefaults.outlinedButtonColors(
-                            contentColor = TextPrimary,
+                            contentColor = AppTheme.Colors.textPrimary,
                         ),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     ) {
                         Column(
-                            modifier  = Modifier.fillMaxWidth(),
+                            modifier            = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.Start,
                         ) {
-                            Text(label, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            Text(desc, fontSize = 11.sp, color = TextSecondary)
+                            Text(
+                                label,
+                                fontWeight = FontWeight.Medium,
+                                fontSize   = AppTheme.TextSize.text,
+                            )
+                            Text(
+                                desc,
+                                fontSize = AppTheme.TextSize.label,
+                                color    = AppTheme.Colors.textSecondary,
+                            )
                         }
                     }
                 }
@@ -480,7 +507,9 @@ private fun SaveTranscriptDialog(
         dismissButton = {
             TextButton(
                 onClick = onDismiss,
-                colors  = ButtonDefaults.textButtonColors(contentColor = TextSecondary),
+                colors  = ButtonDefaults.textButtonColors(
+                    contentColor = AppTheme.Colors.textSecondary,
+                ),
             ) {
                 Text(strings.cancel)
             }
@@ -489,7 +518,6 @@ private fun SaveTranscriptDialog(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
 
 private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 private fun formatTimestamp(millis: Long): String = timeFormat.format(Date(millis))
