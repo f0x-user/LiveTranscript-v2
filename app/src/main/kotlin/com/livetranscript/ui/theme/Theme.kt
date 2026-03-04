@@ -6,47 +6,55 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.livetranscript.settings.ThemeMode
 
-// ── Colour schemes ────────────────────────────────────────────────────────────
-// All brand colours are read from AppTheme.Colors (DesignTokens.kt).
-// To restyle the whole app, edit DesignTokens.kt — do not hardcode colours here.
+/**
+ * CompositionLocal that exposes whether the current theme is dark.
+ * Read it in any composable: val isDark = LocalIsDarkTheme.current
+ */
+val LocalIsDarkTheme = compositionLocalOf { true }
 
-private val DarkColorScheme = darkColorScheme(
-    primary            = AppTheme.Colors.m3Primary,
-    onPrimary          = AppTheme.Colors.m3OnPrimary,
-    primaryContainer   = AppTheme.Colors.m3PrimaryContainer,
+// ── Material 3 colour schemes ──────────────────────────────────────────────────
+// All values are sourced from AppTheme.DarkColors / LightColors (DesignTokens.kt).
+
+private val AppDarkColorScheme = darkColorScheme(
+    primary            = AppTheme.DarkColors.m3Primary,
+    onPrimary          = AppTheme.DarkColors.m3OnPrimary,
+    primaryContainer   = AppTheme.DarkColors.m3PrimaryContainer,
     onPrimaryContainer = Color.White,
-    secondary          = AppTheme.Colors.m3Secondary,
-    onSecondary        = AppTheme.Colors.m3OnPrimary,
-    background         = AppTheme.Colors.m3Background,
-    onBackground       = AppTheme.Colors.m3OnSurface,
-    surface            = AppTheme.Colors.m3Surface,
-    onSurface          = AppTheme.Colors.m3OnSurface,
-    surfaceVariant     = AppTheme.Colors.m3SurfaceVariant,
-    onSurfaceVariant   = AppTheme.Colors.m3OnSurfaceVariant,
+    secondary          = AppTheme.DarkColors.m3Secondary,
+    onSecondary        = AppTheme.DarkColors.m3OnPrimary,
+    background         = AppTheme.DarkColors.m3Background,
+    onBackground       = AppTheme.DarkColors.m3OnSurface,
+    surface            = AppTheme.DarkColors.m3Surface,
+    onSurface          = AppTheme.DarkColors.m3OnSurface,
+    surfaceVariant     = AppTheme.DarkColors.m3SurfaceVariant,
+    onSurfaceVariant   = AppTheme.DarkColors.m3OnSurfaceVariant,
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary          = Blue40,
-    onPrimary        = Color.White,
-    primaryContainer = Color(0xFFBBDEFB),
-    secondary        = Cyan40,
-    onSecondary      = Color.White,
-    background       = Color(0xFFF5F7FA),
-    onBackground     = Color(0xFF1A1A2E),
-    surface          = Color.White,
-    onSurface        = Color(0xFF1A1A2E),
-    surfaceVariant   = Color(0xFFE3EAF2),
-    onSurfaceVariant = Color(0xFF455A64),
+private val AppLightColorScheme = lightColorScheme(
+    primary            = AppTheme.LightColors.m3Primary,
+    onPrimary          = AppTheme.LightColors.m3OnPrimary,
+    primaryContainer   = AppTheme.LightColors.m3PrimaryContainer,
+    onPrimaryContainer = Color(0xFF0D1B2A),
+    secondary          = AppTheme.LightColors.m3Secondary,
+    onSecondary        = Color.White,
+    background         = AppTheme.LightColors.m3Background,
+    onBackground       = AppTheme.LightColors.m3OnSurface,
+    surface            = AppTheme.LightColors.m3Surface,
+    onSurface          = AppTheme.LightColors.m3OnSurface,
+    surfaceVariant     = AppTheme.LightColors.m3SurfaceVariant,
+    onSurfaceVariant   = AppTheme.LightColors.m3OnSurfaceVariant,
 )
 
-// ── Theme composable ──────────────────────────────────────────────────────────
+// ── Theme composable ───────────────────────────────────────────────────────────
 
 @Composable
 fun LiveTranscript2Theme(
@@ -59,21 +67,26 @@ fun LiveTranscript2Theme(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
 
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = if (darkTheme) AppDarkColorScheme else AppLightColorScheme
 
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // Status bar always dark-navy so it blends with the gradient
-            window.statusBarColor = AppTheme.Colors.bgDeep.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            window.statusBarColor = (
+                if (darkTheme) AppTheme.DarkColors.bgDeep
+                else           AppTheme.LightColors.bgDeep
+            ).toArgb()
+            // Light status-bar icons on dark theme; dark icons on light theme
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography  = Typography,
-        content     = content,
-    )
+    CompositionLocalProvider(LocalIsDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography  = Typography,
+            content     = content,
+        )
+    }
 }

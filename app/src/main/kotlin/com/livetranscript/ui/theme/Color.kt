@@ -1,15 +1,15 @@
 package com.livetranscript.ui.theme
 
-// All brand colours are defined in DesignTokens.kt → AppTheme.Colors.
-// This file re-exports the ones consumed by Theme.kt for convenience.
+// All brand colours are defined in DesignTokens.kt → AppTheme.DarkColors / LightColors.
+// This file re-exports the values consumed by legacy callers for convenience.
 
-val NavyDark    = AppTheme.Colors.bgDeep
-val NavyMid     = AppTheme.Colors.bgMid
-val NavyLight   = AppTheme.Colors.bgLight
-val AccentBlue  = AppTheme.Colors.accentBlue
-val AccentCyan  = AppTheme.Colors.accentCyan
+val NavyDark    = AppTheme.DarkColors.bgDeep
+val NavyMid     = AppTheme.DarkColors.bgMid
+val NavyLight   = AppTheme.DarkColors.bgLight
+val AccentBlue  = AppTheme.DarkColors.accentBlue
+val AccentCyan  = AppTheme.DarkColors.accentCyan
 
-// Settings-screen light theme (simple blue palette)
-val Blue40  = AppTheme.Colors.accentBlue
-val Blue80  = AppTheme.Colors.m3Secondary
-val Cyan40  = AppTheme.Colors.accentCyan
+// Light-scheme palette aliases
+val Blue40  = AppTheme.LightColors.m3Primary
+val Blue80  = AppTheme.DarkColors.m3Secondary
+val Cyan40  = AppTheme.DarkColors.accentCyan

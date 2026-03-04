@@ -1,11 +1,14 @@
 package com.livetranscript.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -15,25 +18,31 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.livetranscript.settings.LANGUAGE_OPTIONS
+import androidx.compose.ui.unit.sp
 import com.livetranscript.ui.theme.AppTheme
+import com.livetranscript.ui.theme.LocalIsDarkTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -51,13 +60,402 @@ data class TranscriptEntry(
     val timestamp: Long = System.currentTimeMillis(),
 )
 
-// Flag emoji keyed by Whisper language code
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+
 private val LANG_FLAG = mapOf(
     ""   to "🌍", "de" to "🇩🇪", "en" to "🇬🇧", "fr" to "🇫🇷",
     "es" to "🇪🇸", "it" to "🇮🇹", "pt" to "🇵🇹", "tr" to "🇹🇷",
     "nl" to "🇳🇱", "pl" to "🇵🇱", "ru" to "🇷🇺", "zh" to "🇨🇳",
     "ja" to "🇯🇵", "ko" to "🇰🇷", "ar" to "🇸🇦",
 )
+
+private val SEGMENT_LANGS = listOf("", "de", "en", "fr", "es")
+private val SEGMENT_LABELS = mapOf(
+    "" to "Auto", "de" to "DE", "en" to "EN", "fr" to "FR", "es" to "ES",
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-composables
+
+/**
+ * Full-screen gradient background that adapts to the current theme.
+ */
+@Composable
+fun GradientBackground(
+    isDark: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val brush = if (isDark) AppTheme.Gradients.dark else AppTheme.Gradients.light
+    Box(
+        modifier = modifier.fillMaxSize().background(brush),
+        content  = content,
+    )
+}
+
+/**
+ * Top app bar with centred title and settings icon.
+ */
+@Composable
+private fun LiveTopAppBar(
+    title: String,
+    onSettings: () -> Unit,
+    isDark: Boolean,
+    isRecording: Boolean,
+) {
+    val colors = if (isDark) AppTheme.DarkColors else AppTheme.LightColors
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .background(colors.topBarContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        // Centred title
+        Text(
+            text       = title,
+            fontSize   = AppTheme.TextSize.title,
+            fontWeight = FontWeight.Bold,
+            color      = colors.textPrimary,
+        )
+        // Left placeholder — keeps title visually centred
+        Spacer(modifier = Modifier.align(Alignment.CenterStart).width(48.dp))
+        // Right — Settings icon
+        IconButton(
+            onClick  = onSettings,
+            enabled  = !isRecording,
+            modifier = Modifier.align(Alignment.CenterEnd),
+        ) {
+            Icon(
+                imageVector        = Icons.Filled.Settings,
+                contentDescription = "Settings",
+                tint               = colors.textPrimary.copy(
+                    alpha = if (isRecording) 0.35f else 0.85f,
+                ),
+            )
+        }
+    }
+}
+
+/**
+ * Pill-shaped segment control for the five primary language options.
+ * Non-primary languages are handled via a small dialog.
+ */
+@Composable
+private fun LanguageSegmentRow(
+    selectedLanguage: String,
+    onSelect: (String) -> Unit,
+    isDark: Boolean,
+    isRecording: Boolean,
+) {
+    val chipSelected  = if (isDark) AppTheme.DarkColors.chipSelected  else AppTheme.LightColors.chipSelected
+    val chipDefault   = if (isDark) AppTheme.DarkColors.chipDefault   else AppTheme.LightColors.chipDefault
+    val chipBorder    = if (isDark) AppTheme.DarkColors.chipBorder    else AppTheme.LightColors.chipBorder
+    val textPrimary   = if (isDark) AppTheme.DarkColors.textPrimary   else AppTheme.LightColors.textPrimary
+    val textSecondary = if (isDark) AppTheme.DarkColors.textSecondary else AppTheme.LightColors.textSecondary
+
+    val isOther  = selectedLanguage !in SEGMENT_LANGS
+    var showMore by remember { mutableStateOf(false) }
+
+    if (showMore) {
+        LanguagePickerDialog(
+            selectedLanguage = selectedLanguage,
+            isDark           = isDark,
+            onSelect         = { onSelect(it); showMore = false },
+            onDismiss        = { showMore = false },
+        )
+    }
+
+    Row(
+        modifier              = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        SEGMENT_LANGS.forEach { code ->
+            val selected = (selectedLanguage == code) && !isOther
+            SegmentPill(
+                label         = "${LANG_FLAG[code] ?: "🌍"} ${SEGMENT_LABELS[code]}",
+                selected      = selected,
+                enabled       = !isRecording,
+                chipSelected  = chipSelected,
+                chipDefault   = chipDefault,
+                chipBorder    = chipBorder,
+                textPrimary   = textPrimary,
+                textSecondary = textSecondary,
+                onClick       = { if (!isRecording) onSelect(code) },
+                modifier      = Modifier.weight(1f),
+            )
+        }
+        // "More" pill — highlighted if current language is outside the segment
+        SegmentPill(
+            label         = if (isOther) "${LANG_FLAG[selectedLanguage] ?: "🌐"}" else "···",
+            selected      = isOther,
+            enabled       = !isRecording,
+            chipSelected  = chipSelected,
+            chipDefault   = chipDefault,
+            chipBorder    = chipBorder,
+            textPrimary   = textPrimary,
+            textSecondary = textSecondary,
+            onClick       = { if (!isRecording) showMore = true },
+            modifier      = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun SegmentPill(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    chipSelected: Color,
+    chipDefault: Color,
+    chipBorder: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val containerColor = when {
+        !enabled && selected -> chipSelected.copy(alpha = 0.5f)
+        !enabled             -> chipDefault.copy(alpha = 0.4f)
+        selected             -> chipSelected
+        else                 -> chipDefault
+    }
+    val contentColor = when {
+        !enabled && selected -> Color.White.copy(alpha = 0.5f)
+        !enabled             -> textSecondary.copy(alpha = 0.5f)
+        selected             -> Color.White
+        else                 -> textPrimary
+    }
+    val borderColor = when {
+        selected -> Color.Transparent
+        !enabled -> chipBorder.copy(alpha = 0.4f)
+        else     -> chipBorder
+    }
+
+    Surface(
+        onClick         = onClick,
+        modifier        = modifier.height(36.dp),
+        shape           = AppTheme.Shapes.pill,
+        color           = containerColor,
+        border          = BorderStroke(1.dp, borderColor),
+        enabled         = enabled,
+        tonalElevation  = 0.dp,
+        shadowElevation = if (selected) 2.dp else 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text       = label,
+                color      = contentColor,
+                fontSize   = 11.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines   = 1,
+                overflow   = TextOverflow.Clip,
+            )
+        }
+    }
+}
+
+/**
+ * Dialog for selecting languages outside the five-pill segment.
+ */
+@Composable
+private fun LanguagePickerDialog(
+    selectedLanguage: String,
+    isDark: Boolean,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val allLanguages = listOf(
+        "" to "Auto", "de" to "Deutsch", "en" to "English", "fr" to "Français",
+        "es" to "Español", "it" to "Italiano", "pt" to "Português", "tr" to "Türkçe",
+        "nl" to "Nederlands", "pl" to "Polski", "ru" to "Русский", "zh" to "中文",
+        "ja" to "日本語", "ko" to "한국어", "ar" to "العربية",
+    )
+    val colors = if (isDark) AppTheme.DarkColors else AppTheme.LightColors
+
+    AlertDialog(
+        onDismissRequest  = onDismiss,
+        containerColor    = colors.dialog,
+        titleContentColor = colors.textPrimary,
+        title = { Text("Sprache / Language", fontWeight = FontWeight.SemiBold) },
+        text  = {
+            LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                items(allLanguages) { (code, name) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier          = Modifier.fillMaxWidth(),
+                    ) {
+                        RadioButton(
+                            selected = selectedLanguage == code,
+                            onClick  = { onSelect(code) },
+                        )
+                        Text(
+                            text  = "${LANG_FLAG[code] ?: "🌍"} $name",
+                            color = colors.textPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Abbrechen", color = colors.textSecondary)
+            }
+        },
+    )
+}
+
+/**
+ * Animated waveform bar visualiser.
+ */
+@Composable
+fun WaveformVisualizer(
+    waveform: FloatArray,
+    isDark: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val barColor = if (isDark) AppTheme.DarkColors.accentCyan else AppTheme.LightColors.accentCyan
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(AppTheme.Dimens.waveformHeight)
+            .padding(horizontal = AppTheme.Dimens.waveformPaddingH),
+    ) {
+        val count   = waveform.size
+        val spacing = size.width / count
+        val barW    = spacing * 0.52f
+        for (i in 0 until count) {
+            val h = (waveform[i] * size.height).coerceAtLeast(3f)
+            drawRoundRect(
+                color        = barColor,
+                topLeft      = Offset(i * spacing + spacing * 0.24f, (size.height - h) / 2f),
+                size         = Size(barW, h),
+                cornerRadius = CornerRadius(barW / 2f),
+            )
+        }
+    }
+}
+
+/**
+ * Large pulsing record FAB — the visual anchor of the screen.
+ */
+@Composable
+fun RecordingFab(
+    isRecording: Boolean,
+    modelsReady: Boolean,
+    onToggle: () -> Unit,
+    pulseAlpha: Float,
+    pulseScale: Float,
+    isDark: Boolean,
+) {
+    val colors = if (isDark) AppTheme.DarkColors else AppTheme.LightColors
+    val fabColor = if (modelsReady) colors.recordActive else colors.recordInactive
+
+    Box(contentAlignment = Alignment.Center) {
+        // Outer animated pulse ring
+        if (isRecording) {
+            Box(
+                modifier = Modifier
+                    .size((AppTheme.Dimens.fabSize.value * pulseScale).dp)
+                    .background(
+                        colors.recordPulse.copy(alpha = pulseAlpha * 0.40f),
+                        CircleShape,
+                    ),
+            )
+            // Inner fixed glow ring
+            Box(
+                modifier = Modifier
+                    .size(AppTheme.Dimens.pulseRingInner)
+                    .background(
+                        colors.recordPulse.copy(alpha = 0.15f),
+                        CircleShape,
+                    ),
+            )
+        }
+
+        FloatingActionButton(
+            onClick        = { if (!modelsReady) return@FloatingActionButton; onToggle() },
+            modifier       = Modifier.size(AppTheme.Dimens.fabSize),
+            containerColor = fabColor,
+            contentColor   = Color.White,
+            elevation      = FloatingActionButtonDefaults.elevation(
+                defaultElevation  = if (isRecording) 12.dp else 6.dp,
+                pressedElevation  = 4.dp,
+            ),
+        ) {
+            Icon(
+                imageVector        = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                contentDescription = if (isRecording) "Stop" else "Start",
+                modifier           = Modifier.size(AppTheme.Dimens.fabIconSize),
+            )
+        }
+    }
+}
+
+/**
+ * Small info card shown at the bottom of the screen.
+ */
+@Composable
+fun InfoCard(
+    icon: ImageVector,
+    label: String,
+    isDark: Boolean,
+    onClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    val colors = if (isDark) AppTheme.DarkColors else AppTheme.LightColors
+    val gradient = Brush.verticalGradient(
+        listOf(
+            colors.cardBackground,
+            colors.cardBackground.copy(alpha = 0.6f),
+        ),
+    )
+
+    Surface(
+        onClick          = onClick,
+        modifier         = modifier.height(68.dp),
+        shape            = AppTheme.Shapes.card,
+        color            = Color.Transparent,
+        border           = BorderStroke(1.dp, colors.cardBorder),
+        tonalElevation   = 0.dp,
+        shadowElevation  = 1.dp,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(gradient),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Icon(
+                    imageVector        = icon,
+                    contentDescription = null,
+                    tint               = colors.accentCyan,
+                    modifier           = Modifier.size(18.dp),
+                )
+                Text(
+                    text       = label,
+                    color      = colors.textSecondary,
+                    fontSize   = AppTheme.TextSize.caption,
+                    fontWeight = FontWeight.Medium,
+                    maxLines   = 2,
+                    overflow   = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main screen
@@ -80,17 +478,18 @@ fun LiveScreen(
     modifier: Modifier = Modifier,
 ) {
     val strings        = LocalStrings.current
+    val isDark         = LocalIsDarkTheme.current
+    val colors         = if (isDark) AppTheme.DarkColors else AppTheme.LightColors
     val listState      = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
     // Auto-scroll to newest entry
     LaunchedEffect(transcripts.size, autoScroll) {
-        if (autoScroll && transcripts.isNotEmpty()) {
+        if (autoScroll && transcripts.isNotEmpty())
             coroutineScope.launch { listState.animateScrollToItem(transcripts.size - 1) }
-        }
     }
 
-    // Waveform — single atomic state update per tick avoids per-bar recompositions
+    // Waveform — single atomic state per tick
     var waveform by remember { mutableStateOf(FloatArray(AppTheme.Dimens.waveformBars) { 0.12f }) }
     LaunchedEffect(isRecording) {
         while (isActive) {
@@ -102,10 +501,11 @@ fun LiveScreen(
         }
     }
 
-    // Pulse rings around FAB (only while recording)
+    // Pulse animation for FAB
     val infiniteTransition = rememberInfiniteTransition(label = "rec-pulse")
     val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.55f, targetValue = 0f,
+        initialValue = 0.55f,
+        targetValue  = 0f,
         animationSpec = infiniteRepeatable(
             tween(AppTheme.Animation.pulseDurationMs, easing = LinearEasing),
             RepeatMode.Restart,
@@ -113,7 +513,8 @@ fun LiveScreen(
         label = "pulse-alpha",
     )
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = AppTheme.Dimens.pulseRingFactor,
+        initialValue = 1f,
+        targetValue  = AppTheme.Dimens.pulseRingFactor,
         animationSpec = infiniteRepeatable(
             tween(AppTheme.Animation.pulseDurationMs, easing = LinearEasing),
             RepeatMode.Restart,
@@ -121,247 +522,169 @@ fun LiveScreen(
         label = "pulse-scale",
     )
 
-    var showSaveDialog   by remember { mutableStateOf(false) }
-    var langDropExpanded by remember { mutableStateOf(false) }
+    var showSaveDialog by remember { mutableStateOf(false) }
 
     if (showSaveDialog) {
         SaveTranscriptDialog(
             transcripts = transcripts,
             strings     = strings,
+            isDark      = isDark,
             onDismiss   = { showSaveDialog = false },
         )
     }
 
-    // Full-screen gradient — covers whole window including behind status bar
-    Box(modifier = Modifier.fillMaxSize().background(AppTheme.Gradients.background)) {
-        Column(modifier = modifier.fillMaxSize().statusBarsPadding()) {
+    // ── Root layout ───────────────────────────────────────────────────────────
+    GradientBackground(isDark = isDark) {
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        ) {
 
-            // ── Top bar ───────────────────────────────────────────────────
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text       = strings.appTitle,
-                    fontSize   = AppTheme.TextSize.title,
-                    fontWeight = FontWeight.Bold,
-                    color      = AppTheme.Colors.textPrimary,
-                    modifier   = Modifier.weight(1f),
-                )
-                IconButton(onClick = onOpenSettings) {
-                    Icon(
-                        Icons.Filled.Settings,
-                        contentDescription = strings.settings,
-                        tint = AppTheme.Colors.textPrimary.copy(
-                            alpha = if (isRecording) 0.35f else 0.85f,
-                        ),
-                    )
-                }
-            }
+            // [1] Top app bar
+            LiveTopAppBar(
+                title       = strings.appTitle,
+                onSettings  = onOpenSettings,
+                isDark      = isDark,
+                isRecording = isRecording,
+            )
 
-            // ── Language dropdown + Save button ───────────────────────────
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val currentName = LANGUAGE_OPTIONS.find { it.first == transcriptionLanguage }
-                    ?.second ?: strings.autoDetect
+            // [2] Language segment control
+            LanguageSegmentRow(
+                selectedLanguage = transcriptionLanguage,
+                onSelect         = onLanguageChange,
+                isDark           = isDark,
+                isRecording      = isRecording,
+            )
 
-                ExposedDropdownMenuBox(
-                    expanded         = langDropExpanded,
-                    onExpandedChange = { if (!isRecording) langDropExpanded = it },
-                    modifier         = Modifier.weight(1f),
-                ) {
-                    OutlinedTextField(
-                        value         = "${LANG_FLAG[transcriptionLanguage] ?: "🌍"} $currentName",
-                        onValueChange = {},
-                        readOnly      = true,
-                        singleLine    = true,
-                        label         = {
-                            Text(strings.selectLanguage, fontSize = AppTheme.TextSize.caption)
-                        },
-                        trailingIcon  = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = langDropExpanded)
-                        },
-                        modifier      = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                        colors        = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor       = AppTheme.Colors.chipBorder,
-                            focusedBorderColor         = AppTheme.Colors.accentCyan,
-                            unfocusedTextColor         = AppTheme.Colors.textPrimary,
-                            focusedTextColor           = AppTheme.Colors.textPrimary,
-                            unfocusedLabelColor        = AppTheme.Colors.textSecondary,
-                            focusedLabelColor          = AppTheme.Colors.accentCyan,
-                            unfocusedTrailingIconColor = AppTheme.Colors.textSecondary,
-                            focusedTrailingIconColor   = AppTheme.Colors.textPrimary,
-                            unfocusedContainerColor    = AppTheme.Colors.chipDefault,
-                            focusedContainerColor      = AppTheme.Colors.chipDefault,
-                        ),
-                        textStyle = LocalTextStyle.current.copy(fontSize = AppTheme.TextSize.text),
-                    )
-                    ExposedDropdownMenu(
-                        expanded         = langDropExpanded,
-                        onDismissRequest = { langDropExpanded = false },
-                        modifier         = Modifier.background(AppTheme.Colors.dialog),
-                    ) {
-                        LANGUAGE_OPTIONS.forEach { (code, name) ->
-                            DropdownMenuItem(
-                                text    = {
-                                    Text(
-                                        "${LANG_FLAG[code] ?: "🌍"} $name",
-                                        color = AppTheme.Colors.textPrimary,
-                                    )
-                                },
-                                onClick = {
-                                    onLanguageChange(code)
-                                    langDropExpanded = false
-                                },
-                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
-                            )
-                        }
-                    }
-                }
+            // [3] Transcript card (fills remaining vertical space)
+            val cardBg     = colors.cardBackground
+            val cardBorder = colors.cardBorder
 
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Save — active only when the transcript has entries
-                IconButton(
-                    onClick  = { showSaveDialog = true },
-                    enabled  = transcripts.isNotEmpty(),
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.Save,
-                        contentDescription = strings.save,
-                        tint = if (transcripts.isNotEmpty())
-                            AppTheme.Colors.textPrimary
-                        else
-                            AppTheme.Colors.textSecondary.copy(alpha = 0.35f),
-                    )
-                }
-            }
-
-            // ── Waveform / empty-state hint ───────────────────────────────
-            if (isRecording) {
-                Text(
-                    text       = strings.liveTranscriptionRunning,
-                    fontSize   = AppTheme.TextSize.body,
-                    fontWeight = FontWeight.Medium,
-                    color      = AppTheme.Colors.textPrimary.copy(alpha = 0.85f),
-                    modifier   = Modifier.padding(
-                        horizontal = AppTheme.Dimens.waveformPaddingH,
-                        vertical   = 4.dp,
-                    ),
-                )
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(AppTheme.Dimens.waveformHeight)
-                        .padding(horizontal = AppTheme.Dimens.waveformPaddingH),
-                ) {
-                    val count   = waveform.size
-                    val spacing = size.width / count
-                    val barW    = spacing * 0.52f
-                    for (i in 0 until count) {
-                        val h = (waveform[i] * size.height).coerceAtLeast(3f)
-                        drawRoundRect(
-                            color        = AppTheme.Colors.accentCyan,
-                            topLeft      = Offset(i * spacing + spacing * 0.24f, (size.height - h) / 2f),
-                            size         = Size(barW, h),
-                            cornerRadius = CornerRadius(barW / 2f),
-                        )
-                    }
-                }
-            } else if (transcripts.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text      = if (modelsReady) strings.startToBegin else strings.modelsLoading,
-                        color     = AppTheme.Colors.textSecondary,
-                        fontSize  = AppTheme.TextSize.text,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-
-            // ── Transcript list ───────────────────────────────────────────
-            LazyColumn(
-                state   = listState,
+            Card(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding      = PaddingValues(vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                shape  = AppTheme.Shapes.card,
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                border = BorderStroke(1.dp, cardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
-                items(transcripts) { entry ->
-                    TranscriptBubble(
-                        entry         = entry,
-                        showTimestamp = showTimestamps,
-                        speakerLabel  = strings.speaker,
-                        unknownLabel  = strings.unknown,
-                    )
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 12.dp, bottom = 4.dp),
+                ) {
+                    // Status line + save icon
+                    Row(
+                        modifier          = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text       = when {
+                                !modelsReady -> strings.modelsLoading
+                                isRecording  -> strings.liveTranscriptionRunning
+                                transcripts.isNotEmpty() -> "Transkript"
+                                else         -> strings.startToBegin
+                            },
+                            color      = if (isRecording) colors.accentCyan
+                                         else colors.textSecondary,
+                            fontSize   = AppTheme.TextSize.caption,
+                            fontWeight = if (isRecording) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier   = Modifier.weight(1f),
+                        )
+                        // Save icon (top-right inside card)
+                        if (transcripts.isNotEmpty()) {
+                            IconButton(
+                                onClick  = { showSaveDialog = true },
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Icon(
+                                    imageVector        = Icons.Filled.Save,
+                                    contentDescription = strings.save,
+                                    tint               = colors.accentCyan.copy(alpha = 0.75f),
+                                    modifier           = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    // Waveform — animates in while recording
+                    AnimatedVisibility(
+                        visible = isRecording,
+                        enter   = fadeIn(tween(200)),
+                        exit    = fadeOut(tween(200)),
+                    ) {
+                        WaveformVisualizer(
+                            waveform = waveform,
+                            isDark   = isDark,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    }
+
+                    // Transcript list or hint
+                    if (transcripts.isEmpty()) {
+                        Box(
+                            modifier         = Modifier.weight(1f).fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text      = if (modelsReady) strings.startToBegin
+                                            else strings.modelsLoading,
+                                color     = colors.textSecondary.copy(alpha = 0.6f),
+                                fontSize  = AppTheme.TextSize.text,
+                                textAlign = TextAlign.Center,
+                                modifier  = Modifier.padding(horizontal = 24.dp),
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            state               = listState,
+                            modifier            = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding      = PaddingValues(vertical = 8.dp),
+                        ) {
+                            items(transcripts) { entry ->
+                                TranscriptBubble(
+                                    entry         = entry,
+                                    showTimestamp = showTimestamps,
+                                    speakerLabel  = strings.speaker,
+                                    unknownLabel  = strings.unknown,
+                                    isDark        = isDark,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
-            // ── Record FAB + status ───────────────────────────────────────
+            // [4] Bottom section: FAB + status + info cards
             Column(
-                modifier = Modifier
+                modifier            = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(top = 12.dp, bottom = 20.dp),
+                    .padding(top = 8.dp, bottom = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    // Animated pulse rings (recording only)
-                    if (isRecording) {
-                        Box(
-                            modifier = Modifier
-                                .size((AppTheme.Dimens.fabSize.value * pulseScale).dp)
-                                .background(
-                                    AppTheme.Colors.recordPulse.copy(alpha = pulseAlpha * 0.45f),
-                                    CircleShape,
-                                ),
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(AppTheme.Dimens.pulseRingInner)
-                                .background(
-                                    AppTheme.Colors.recordPulse.copy(alpha = 0.18f),
-                                    CircleShape,
-                                ),
-                        )
-                    }
+                // FAB
+                RecordingFab(
+                    isRecording = isRecording,
+                    modelsReady = modelsReady,
+                    onToggle    = { if (isRecording) onStopRecording() else onStartRecording() },
+                    pulseAlpha  = pulseAlpha,
+                    pulseScale  = pulseScale,
+                    isDark      = isDark,
+                )
 
-                    FloatingActionButton(
-                        onClick = {
-                            if (!modelsReady) return@FloatingActionButton
-                            if (isRecording) onStopRecording() else onStartRecording()
-                        },
-                        modifier       = Modifier.size(AppTheme.Dimens.fabSize),
-                        containerColor = if (modelsReady) AppTheme.Colors.recordActive
-                                         else AppTheme.Colors.recordInactive,
-                        contentColor   = AppTheme.Colors.textPrimary,
-                        elevation      = FloatingActionButtonDefaults.elevation(
-                            defaultElevation = if (isRecording) 10.dp else 4.dp,
-                        ),
-                    ) {
-                        Icon(
-                            imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
-                            contentDescription = if (isRecording) strings.stopRecording
-                                                 else strings.startRecording,
-                            modifier = Modifier.size(AppTheme.Dimens.fabIconSize),
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.height(8.dp))
 
-                Spacer(modifier = Modifier.height(10.dp))
-
+                // Status / partial text
                 Text(
                     text = when {
                         !modelsReady -> strings.modelsLoading
@@ -370,24 +693,47 @@ fun LiveScreen(
                         isRecording  -> strings.recordingRunning
                         else         -> strings.ready
                     },
-                    color      = if (isRecording) AppTheme.Colors.recordingLabel
-                                 else AppTheme.Colors.textSecondary,
+                    color      = if (isRecording) colors.recordingLabel else colors.textSecondary,
                     fontSize   = AppTheme.TextSize.body,
                     fontWeight = if (isRecording) FontWeight.SemiBold else FontWeight.Normal,
                     textAlign  = TextAlign.Center,
                     modifier   = Modifier.padding(horizontal = 24.dp),
                 )
 
-                if (transcripts.isNotEmpty() && !isRecording) {
-                    Spacer(modifier = Modifier.height(6.dp))
+                // Clear button
+                AnimatedVisibility(visible = transcripts.isNotEmpty() && !isRecording) {
                     TextButton(
                         onClick = onClear,
                         colors  = ButtonDefaults.textButtonColors(
-                            contentColor = AppTheme.Colors.textSecondary.copy(alpha = 0.6f),
+                            contentColor = colors.textSecondary.copy(alpha = 0.55f),
                         ),
                     ) {
                         Text(strings.deleteAll, fontSize = AppTheme.TextSize.caption)
                     }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Info cards row
+                Row(
+                    modifier              = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    InfoCard(
+                        icon     = Icons.Filled.Description,
+                        label    = "Zusammenfassung",
+                        isDark   = isDark,
+                        onClick  = { if (transcripts.isNotEmpty()) showSaveDialog = true },
+                        modifier = Modifier.weight(1f),
+                    )
+                    InfoCard(
+                        icon     = Icons.Filled.ClosedCaption,
+                        label    = "Untertitel hinzufügen",
+                        isDark   = isDark,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
         }
@@ -403,10 +749,13 @@ fun TranscriptBubble(
     showTimestamp: Boolean = false,
     speakerLabel: String   = "Speaker",
     unknownLabel: String   = "Unknown",
+    isDark: Boolean        = true,
 ) {
-    val color = AppTheme.Colors.speakers[
-        entry.speakerId.coerceAtLeast(0) % AppTheme.Colors.speakers.size
-    ]
+    val palette = if (isDark) AppTheme.DarkColors.speakers else AppTheme.LightColors.speakers
+    val color   = palette[entry.speakerId.coerceAtLeast(0) % palette.size]
+    val textPrimary = if (isDark) AppTheme.DarkColors.textPrimary else AppTheme.LightColors.textPrimary
+    val textSecondary = if (isDark) AppTheme.DarkColors.textSecondary else AppTheme.LightColors.textSecondary
+    val surface = if (isDark) AppTheme.DarkColors.surface else AppTheme.LightColors.surface
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -431,19 +780,19 @@ fun TranscriptBubble(
                 Text(
                     text     = formatTimestamp(entry.timestamp),
                     fontSize = AppTheme.TextSize.micro,
-                    color    = AppTheme.Colors.textSecondary.copy(alpha = 0.5f),
+                    color    = textSecondary.copy(alpha = 0.5f),
                 )
             }
         }
         Surface(
             shape = AppTheme.Shapes.bubble,
-            color = AppTheme.Colors.surface,
+            color = surface,
         ) {
             Text(
                 text       = entry.text,
-                color      = AppTheme.Colors.textPrimary.copy(alpha = 0.92f),
+                color      = textPrimary.copy(alpha = 0.92f),
                 fontSize   = AppTheme.TextSize.text,
-                lineHeight = AppTheme.TextSize.subtitle,
+                lineHeight  = AppTheme.TextSize.subtitle,
                 modifier   = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
@@ -457,15 +806,17 @@ fun TranscriptBubble(
 private fun SaveTranscriptDialog(
     transcripts: List<TranscriptEntry>,
     strings: AppStrings,
+    isDark: Boolean,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val colors  = if (isDark) AppTheme.DarkColors else AppTheme.LightColors
 
     AlertDialog(
         onDismissRequest  = onDismiss,
-        containerColor    = AppTheme.Colors.dialog,
-        titleContentColor = AppTheme.Colors.textPrimary,
-        textContentColor  = AppTheme.Colors.textSecondary,
+        containerColor    = colors.dialog,
+        titleContentColor = colors.textPrimary,
+        textContentColor  = colors.textSecondary,
         title = { Text(strings.saveTranscript, fontWeight = FontWeight.SemiBold) },
         text  = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -485,9 +836,10 @@ private fun SaveTranscriptDialog(
                             onDismiss()
                         },
                         modifier       = Modifier.fillMaxWidth(),
-                        border         = BorderStroke(1.dp, AppTheme.Colors.chipBorder),
+                        shape          = AppTheme.Shapes.button,
+                        border         = BorderStroke(1.dp, colors.chipBorder),
                         colors         = ButtonDefaults.outlinedButtonColors(
-                            contentColor = AppTheme.Colors.textPrimary,
+                            contentColor = colors.textPrimary,
                         ),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     ) {
@@ -495,16 +847,8 @@ private fun SaveTranscriptDialog(
                             modifier            = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.Start,
                         ) {
-                            Text(
-                                label,
-                                fontWeight = FontWeight.Medium,
-                                fontSize   = AppTheme.TextSize.text,
-                            )
-                            Text(
-                                desc,
-                                fontSize = AppTheme.TextSize.label,
-                                color    = AppTheme.Colors.textSecondary,
-                            )
+                            Text(label, fontWeight = FontWeight.Medium, fontSize = AppTheme.TextSize.text)
+                            Text(desc, fontSize = AppTheme.TextSize.label, color = colors.textSecondary)
                         }
                     }
                 }
@@ -514,9 +858,7 @@ private fun SaveTranscriptDialog(
         dismissButton = {
             TextButton(
                 onClick = onDismiss,
-                colors  = ButtonDefaults.textButtonColors(
-                    contentColor = AppTheme.Colors.textSecondary,
-                ),
+                colors  = ButtonDefaults.textButtonColors(contentColor = colors.textSecondary),
             ) {
                 Text(strings.cancel)
             }
