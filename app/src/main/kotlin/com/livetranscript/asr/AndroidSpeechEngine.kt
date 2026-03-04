@@ -16,7 +16,8 @@ import java.util.Locale
  *
  * - Startet nach jedem Ergebnis automatisch neu (kontinuierliche Erkennung).
  * - Liefert Partial-Results für Echtzeit-Anzeige während des Sprechens.
- * - Bevorzugt Offline-Erkennung (EXTRA_PREFER_OFFLINE = true).
+ * - Sprach-Fallback bei ERROR_LANGUAGE_NOT_SUPPORTED (error 12):
+ *   Stufe 0 → konfigurierte Sprache, Stufe 1 → Gerätesprache, Stufe 2 → Auto-Detect.
  * - SpeechRecognizer muss auf dem Main-Thread laufen; alle Aufrufe werden
  *   intern über Handler(mainLooper) geleitet.
  */
@@ -30,10 +31,14 @@ class AndroidSpeechEngine(
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var active = false
 
+    // Language fallback state: 0 = use configured language, 1 = device default, 2 = auto-detect
+    private var langFallbackLevel = 0
+
     fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
 
     fun start() {
         active = true
+        langFallbackLevel = 0
         mainHandler.post {
             recognizer = SpeechRecognizer.createSpeechRecognizer(context).also {
                 it.setRecognitionListener(listener)
@@ -51,21 +56,26 @@ class AndroidSpeechEngine(
         }
     }
 
+    private fun effectiveLocaleTag(): String = when (langFallbackLevel) {
+        0    -> if (language.isEmpty()) Locale.getDefault().toLanguageTag()
+                else Locale.forLanguageTag(language).toLanguageTag()
+        1    -> Locale.getDefault().toLanguageTag()
+        else -> ""  // auto-detect: omit EXTRA_LANGUAGE → engine chooses
+    }
+
     private fun listen() {
         if (!active) return
-        val locale = if (language.isEmpty()) Locale.getDefault()
-                     else Locale.forLanguageTag(language)
+        val localeTag = effectiveLocaleTag()
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                      RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale.toLanguageTag())
+            if (localeTag.isNotEmpty()) putExtra(RecognizerIntent.EXTRA_LANGUAGE, localeTag)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            // Kein EXTRA_PREFER_OFFLINE: Online-Fallback erlauben falls kein lokales Sprachpaket
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 300L)
         }
         recognizer?.startListening(intent)
-        Log.d(TAG, "Listening started (lang=$language)")
+        Log.d(TAG, "Listening started (fallbackLevel=$langFallbackLevel, locale='$localeTag')")
     }
 
     private val listener = object : RecognitionListener {
@@ -92,17 +102,24 @@ class AndroidSpeechEngine(
         }
 
         override fun onError(error: Int) {
-            Log.w(TAG, "Error: ${errorName(error)}")
+            Log.w(TAG, "Error: ${errorName(error)} (fallbackLevel=$langFallbackLevel)")
             if (!active) return
             val delayMs = when (error) {
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
                 SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> 1000L
-                SpeechRecognizer.ERROR_AUDIO             -> 2000L  // Mikrofon kurzzeitig belegt
+                SpeechRecognizer.ERROR_AUDIO             -> 2000L
                 SpeechRecognizer.ERROR_NETWORK,
                 SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
                 SpeechRecognizer.ERROR_SERVER            -> 2000L
-                ERROR_LANGUAGE_NOT_SUPPORTED             -> 3000L  // Sprachpaket fehlt
-                else                                     -> 300L   // NO_MATCH, SPEECH_TIMEOUT usw.
+                ERROR_LANGUAGE_NOT_SUPPORTED             -> {
+                    // Advance language fallback: configured → device default → auto-detect
+                    if (langFallbackLevel < 2) {
+                        langFallbackLevel++
+                        Log.w(TAG, "Language not supported — falling back to level $langFallbackLevel")
+                    }
+                    3000L
+                }
+                else                                     -> 300L
             }
             mainHandler.postDelayed({ listen() }, delayMs)
         }
