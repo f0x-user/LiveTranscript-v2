@@ -17,6 +17,9 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
     private val speakerSampleCounts = mutableListOf<Int>()
     override val speakerCount: Int get() = speakerEmbeddings.size
 
+    // Fallback-Sprecher für zu kurze Segmente — Instanzvariable (kein statischer Zustand)
+    private var lastSpeakerId = 0
+
     override fun initialize() {
         if (isInitialized) return
         try {
@@ -126,13 +129,11 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
     companion object {
         private const val TAG = "SherpaSpeakerDiarizer"
         const val SAMPLE_RATE = 16000
-        /** Minimum audio length for a reliable embedding (~1.5 seconds) */
-        private const val MIN_SAMPLES_FOR_EMBEDDING = SAMPLE_RATE * 3 / 2
-        /** Lower threshold → less likely to create spurious new speakers */
-        private const val SIMILARITY_THRESHOLD = 0.45f
+        /** Minimum audio length for a reliable embedding (0.75 s — war 1.5 s) */
+        private const val MIN_SAMPLES_FOR_EMBEDDING = SAMPLE_RATE * 3 / 4
+        /** Höherer Schwellwert → sauberere Sprechertrennung (war 0.45) */
+        private const val SIMILARITY_THRESHOLD = 0.55f
         /** Stop updating average after this many samples to keep it stable */
         private const val MAX_EMBEDDING_SAMPLES = 8
-        /** Fallback when segment is too short for diarization */
-        private var lastSpeakerId = 0
     }
 }

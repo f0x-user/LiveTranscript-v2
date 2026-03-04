@@ -173,14 +173,14 @@ class AudioRecorderService : Service() {
         val buffer = FloatArray(CHUNK_SIZE_SAMPLES)
         val accumulator = mutableListOf<Float>()
 
-        // Thresholds calibrated for VOICE_RECOGNITION source + AGC:
-        //   Suppressed ambient/wind → RMS ≈ 0.001–0.005
-        //   Normal speech (even from a table, ~50 cm) → RMS ≈ 0.008–0.15
-        val voiceThreshold   = 0.008f  // Counts as active voice
-        val silenceThreshold = 0.003f  // Below this = silence
+        // Schwellwerte für VOICE_RECOGNITION + AGC:
+        //   Unterdrücktes Umgebungsrauschen → RMS ≈ 0.001–0.003
+        //   Sprache (auch aus ~1 m Entfernung mit AGC) → RMS ≈ 0.005–0.15
+        val voiceThreshold   = 0.005f  // Sprache aktiv (war 0.008, sensibler für Distanzaufnahmen)
+        val silenceThreshold = 0.002f  // Darunter = Stille (war 0.003)
         var silenceFrames    = 0
-        var voiceFrames      = 0       // Chunks with voice-level energy in this segment
-        val maxSilenceFrames = 6       // 6 × 256 ms ≈ 1.5 s silence → send to ASR
+        var voiceFrames      = 0       // Chunks mit Sprachpegel in diesem Segment
+        val maxSilenceFrames = 5       // 5 × 100 ms = 500 ms Stille → an ASR senden (war 1,5 s)
 
         while (currentCoroutineContext().isActive && isRecording) {
             val read = audioRecord?.read(buffer, 0, CHUNK_SIZE_SAMPLES, AudioRecord.READ_BLOCKING) ?: break
@@ -275,10 +275,10 @@ class AudioRecorderService : Service() {
         const val ACTION_STOP   = "com.livetranscript.STOP_RECORDING"
         private const val NOTIFICATION_ID = 1001
         const val SAMPLE_RATE = 16000
-        private const val CHUNK_SIZE_SAMPLES = 4096          // ≈ 256 ms per chunk
+        private const val CHUNK_SIZE_SAMPLES = 1600          // 100 ms per chunk (feinere VAD-Granularität)
         private const val CHUNK_SIZE_BYTES   = CHUNK_SIZE_SAMPLES * 4
-        private const val MAX_ACCUMULATOR_SAMPLES        = SAMPLE_RATE * 4      // 4 s max per segment
-        private const val MIN_SAMPLES_FOR_TRANSCRIPTION  = SAMPLE_RATE * 3 / 4  // 0.75 s minimum
-        private const val MIN_VOICE_FRAMES = 1               // At least 1 voice chunk required
+        private const val MAX_ACCUMULATOR_SAMPLES        = SAMPLE_RATE * 2      // 2 s max (war 4 s)
+        private const val MIN_SAMPLES_FOR_TRANSCRIPTION  = SAMPLE_RATE / 2      // 0,5 s minimum (war 0,75 s)
+        private const val MIN_VOICE_FRAMES = 2               // Mind. 200 ms Sprache erforderlich
     }
 }

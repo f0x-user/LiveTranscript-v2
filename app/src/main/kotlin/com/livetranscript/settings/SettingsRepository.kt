@@ -24,7 +24,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     val transcriptionLanguage: Flow<String> = context.settingsDataStore.data.map { prefs ->
-        prefs[PreferenceKeys.TRANSCRIPTION_LANGUAGE] ?: ""
+        prefs[PreferenceKeys.TRANSCRIPTION_LANGUAGE] ?: "de"  // Standard: Deutsch statt Auto-Erkennung
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {
@@ -45,6 +45,6 @@ class SettingsRepository(private val context: Context) {
 
     /** Synchronous read used during service initialisation (called before coroutines are set up). */
     fun getLanguageSync(): String = runBlocking {
-        context.settingsDataStore.data.first()[PreferenceKeys.TRANSCRIPTION_LANGUAGE] ?: ""
+        context.settingsDataStore.data.first()[PreferenceKeys.TRANSCRIPTION_LANGUAGE] ?: "de"
     }
 }
