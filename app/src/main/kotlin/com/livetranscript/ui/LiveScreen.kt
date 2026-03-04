@@ -18,10 +18,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
@@ -33,7 +31,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -576,41 +573,24 @@ fun LiveScreen(
                         .fillMaxSize()
                         .padding(top = 12.dp, bottom = 4.dp),
                 ) {
-                    // Status line + save icon
-                    Row(
-                        modifier          = Modifier
+                    // Status / live partial text
+                    Text(
+                        text = when {
+                            !modelsReady -> strings.modelsLoading
+                            isRecording && partialText.isNotBlank() -> partialText
+                            isRecording  -> strings.liveTranscriptionRunning
+                            transcripts.isNotEmpty() -> strings.transcript
+                            else         -> strings.startToBegin
+                        },
+                        color      = if (isRecording) colors.accentCyan else colors.textSecondary,
+                        fontSize   = AppTheme.TextSize.caption,
+                        fontWeight = if (isRecording) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines   = 2,
+                        overflow   = TextOverflow.Ellipsis,
+                        modifier   = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text       = when {
-                                !modelsReady -> strings.modelsLoading
-                                isRecording  -> strings.liveTranscriptionRunning
-                                transcripts.isNotEmpty() -> "Transkript"
-                                else         -> strings.startToBegin
-                            },
-                            color      = if (isRecording) colors.accentCyan
-                                         else colors.textSecondary,
-                            fontSize   = AppTheme.TextSize.caption,
-                            fontWeight = if (isRecording) FontWeight.SemiBold else FontWeight.Normal,
-                            modifier   = Modifier.weight(1f),
-                        )
-                        // Save icon (top-right inside card)
-                        if (transcripts.isNotEmpty()) {
-                            IconButton(
-                                onClick  = { showSaveDialog = true },
-                                modifier = Modifier.size(36.dp),
-                            ) {
-                                Icon(
-                                    imageVector        = Icons.Filled.Save,
-                                    contentDescription = strings.save,
-                                    tint               = colors.accentCyan.copy(alpha = 0.75f),
-                                    modifier           = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    }
+                    )
 
                     // Waveform — animates in while recording
                     AnimatedVisibility(
@@ -664,77 +644,70 @@ fun LiveScreen(
                 }
             }
 
-            // [4] Bottom section: FAB + status + info cards
+            // [4] Bottom section: FAB left | status+delete right | summary card
             Column(
-                modifier            = Modifier
+                modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(top = 8.dp, bottom = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                // FAB
-                RecordingFab(
-                    isRecording = isRecording,
-                    modelsReady = modelsReady,
-                    onToggle    = { if (isRecording) onStopRecording() else onStartRecording() },
-                    pulseAlpha  = pulseAlpha,
-                    pulseScale  = pulseScale,
-                    isDark      = isDark,
-                )
+                // FAB row: record button (left) + status text + delete button (right)
+                Row(
+                    modifier          = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Left — Record FAB
+                    RecordingFab(
+                        isRecording = isRecording,
+                        modelsReady = modelsReady,
+                        onToggle    = { if (isRecording) onStopRecording() else onStartRecording() },
+                        pulseAlpha  = pulseAlpha,
+                        pulseScale  = pulseScale,
+                        isDark      = isDark,
+                    )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
-                // Status / partial text
-                Text(
-                    text = when {
-                        !modelsReady -> strings.modelsLoading
-                        isRecording && partialText.isNotBlank() ->
-                            partialText.take(80).let { if (partialText.length > 80) "$it…" else it }
-                        isRecording  -> strings.recordingRunning
-                        else         -> strings.ready
-                    },
-                    color      = if (isRecording) colors.recordingLabel else colors.textSecondary,
-                    fontSize   = AppTheme.TextSize.body,
-                    fontWeight = if (isRecording) FontWeight.SemiBold else FontWeight.Normal,
-                    textAlign  = TextAlign.Center,
-                    modifier   = Modifier.padding(horizontal = 24.dp),
-                )
+                    // Centre — status text (takes remaining width)
+                    Text(
+                        text = when {
+                            !modelsReady -> strings.modelsLoading
+                            isRecording  -> strings.recordingRunning
+                            else         -> strings.ready
+                        },
+                        color      = if (isRecording) colors.recordingLabel else colors.textSecondary,
+                        fontSize   = AppTheme.TextSize.body,
+                        fontWeight = if (isRecording) FontWeight.SemiBold else FontWeight.Normal,
+                        modifier   = Modifier.weight(1f),
+                    )
 
-                // Clear button
-                AnimatedVisibility(visible = transcripts.isNotEmpty() && !isRecording) {
-                    TextButton(
-                        onClick = onClear,
-                        colors  = ButtonDefaults.textButtonColors(
-                            contentColor = colors.textSecondary.copy(alpha = 0.55f),
-                        ),
-                    ) {
-                        Text(strings.deleteAll, fontSize = AppTheme.TextSize.caption)
+                    // Right — Delete button (visible when there is content and not recording)
+                    AnimatedVisibility(visible = transcripts.isNotEmpty() && !isRecording) {
+                        TextButton(
+                            onClick = onClear,
+                            colors  = ButtonDefaults.textButtonColors(
+                                contentColor = colors.textSecondary.copy(alpha = 0.55f),
+                            ),
+                        ) {
+                            Text(strings.deleteAll, fontSize = AppTheme.TextSize.caption)
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Info cards row
-                Row(
-                    modifier              = Modifier
+                // Summary / save card — full width
+                InfoCard(
+                    icon     = Icons.Filled.Description,
+                    label    = strings.summary,
+                    isDark   = isDark,
+                    onClick  = { if (transcripts.isNotEmpty()) showSaveDialog = true },
+                    modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    InfoCard(
-                        icon     = Icons.Filled.Description,
-                        label    = "Zusammenfassung",
-                        isDark   = isDark,
-                        onClick  = { if (transcripts.isNotEmpty()) showSaveDialog = true },
-                        modifier = Modifier.weight(1f),
-                    )
-                    InfoCard(
-                        icon     = Icons.Filled.ClosedCaption,
-                        label    = "Untertitel hinzufügen",
-                        isDark   = isDark,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+                )
             }
         }
     }

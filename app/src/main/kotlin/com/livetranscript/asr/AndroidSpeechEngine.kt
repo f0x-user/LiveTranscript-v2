@@ -71,7 +71,11 @@ class AndroidSpeechEngine(
                      RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             if (localeTag.isNotEmpty()) putExtra(RecognizerIntent.EXTRA_LANGUAGE, localeTag)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+            // Allow longer sessions: 3 s complete silence before the recognizer stops.
+            // This reduces restart frequency → fewer mic-acquisition clicks and fewer
+            // gaps where the first word of a new sentence is lost.
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 300L)
         }
         recognizer?.startListening(intent)

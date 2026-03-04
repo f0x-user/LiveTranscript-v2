@@ -1,6 +1,7 @@
 package com.livetranscript.ui
 
 import androidx.compose.runtime.compositionLocalOf
+import java.util.Locale
 
 /**
  * All user-visible strings in one place.
@@ -57,7 +58,11 @@ data class AppStrings(
     val asrGoogleDesc: String,
     val asrWhisper: String,
     val asrWhisperDesc: String,
+    // Info cards
+    val summary: String,
 )
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 val GermanStrings = AppStrings(
     appTitle                = "Live-Transkript",
@@ -102,6 +107,7 @@ val GermanStrings = AppStrings(
     asrGoogleDesc           = "Schnell, hohe Genauigkeit, nutzt Android-Sprachpakete",
     asrWhisper              = "Whisper (offline)",
     asrWhisperDesc          = "Vollständig offline, nutzt eingebettetes KI-Modell",
+    summary                 = "Zusammenfassung",
 )
 
 val EnglishStrings = AppStrings(
@@ -147,12 +153,111 @@ val EnglishStrings = AppStrings(
     asrGoogleDesc           = "Fast, high accuracy, uses Android language packs",
     asrWhisper              = "Whisper (offline)",
     asrWhisperDesc          = "Fully offline, uses embedded AI model",
+    summary                 = "Summary",
 )
 
-/** Returns the appropriate [AppStrings] for the given Whisper language code. */
+val FrenchStrings = AppStrings(
+    appTitle                = "Transcription live",
+    recordingRunning        = "Enregistrement en cours…",
+    ready                   = "Prêt",
+    modelsLoading           = "Chargement des modèles…",
+    liveTranscriptionRunning = "Transcription en direct…",
+    startToBegin            = "Démarrez pour commencer",
+    startRecording          = "Démarrer",
+    stopRecording           = "Arrêter",
+    deleteAll               = "Effacer",
+    save                    = "Enregistrer",
+    cancel                  = "Annuler",
+    speaker                 = "Intervenant",
+    unknown                 = "Inconnu",
+    settings                = "Paramètres",
+    settingsTitle           = "Paramètres",
+    appearance              = "Apparence",
+    themeLight              = "Clair",
+    themeDark               = "Sombre",
+    themeSystem             = "Système (automatique)",
+    transcript              = "Transcription",
+    autoScroll              = "Défilement automatique",
+    autoScrollDesc          = "Fait défiler jusqu'au dernier message",
+    showTimestamps          = "Afficher l'heure",
+    showTimestampsDesc      = "Affiche l'heure à côté de chaque entrée",
+    info                    = "Infos",
+    saveTranscript          = "Enregistrer la transcription",
+    selectFormat            = "Choisir le format",
+    formatTxt               = "Texte brut (.txt)",
+    formatTxtDesc           = "Format texte simple",
+    formatCsv               = "Tableau (.csv)",
+    formatCsvDesc           = "Pour Excel, Sheets etc.",
+    formatJson              = "JSON (.json)",
+    formatJsonDesc          = "Format de données structuré",
+    formatSrt               = "Sous-titres (.srt)",
+    formatSrtDesc           = "Pour les sous-titres vidéo",
+    selectLanguage          = "Choisir la langue",
+    autoDetect              = "Automatique",
+    asrBackend              = "Reconnaissance vocale",
+    asrGoogle               = "Google (recommandé)",
+    asrGoogleDesc           = "Rapide et précis, utilise les paquets de langue Android",
+    asrWhisper              = "Whisper (hors ligne)",
+    asrWhisperDesc          = "Entièrement hors ligne, utilise un modèle IA intégré",
+    summary                 = "Résumé",
+)
+
+val SpanishStrings = AppStrings(
+    appTitle                = "Transcripción en vivo",
+    recordingRunning        = "Grabación en curso…",
+    ready                   = "Listo",
+    modelsLoading           = "Cargando modelos…",
+    liveTranscriptionRunning = "Transcripción en vivo…",
+    startToBegin            = "Iniciar para comenzar",
+    startRecording          = "Iniciar",
+    stopRecording           = "Detener",
+    deleteAll               = "Eliminar",
+    save                    = "Guardar",
+    cancel                  = "Cancelar",
+    speaker                 = "Hablante",
+    unknown                 = "Desconocido",
+    settings                = "Ajustes",
+    settingsTitle           = "Ajustes",
+    appearance              = "Apariencia",
+    themeLight              = "Claro",
+    themeDark               = "Oscuro",
+    themeSystem             = "Sistema (automático)",
+    transcript              = "Transcripción",
+    autoScroll              = "Desplazamiento automático",
+    autoScrollDesc          = "Se desplaza hasta la última entrada",
+    showTimestamps          = "Mostrar marcas de tiempo",
+    showTimestampsDesc      = "Muestra la hora junto a cada entrada",
+    info                    = "Información",
+    saveTranscript          = "Guardar transcripción",
+    selectFormat            = "Seleccionar formato",
+    formatTxt               = "Texto plano (.txt)",
+    formatTxtDesc           = "Formato de texto simple",
+    formatCsv               = "Tabla (.csv)",
+    formatCsvDesc           = "Para Excel, Sheets etc.",
+    formatJson              = "JSON (.json)",
+    formatJsonDesc          = "Formato de datos estructurado",
+    formatSrt               = "Subtítulos (.srt)",
+    formatSrtDesc           = "Para subtítulos de vídeo",
+    selectLanguage          = "Seleccionar idioma",
+    autoDetect              = "Automático",
+    asrBackend              = "Reconocimiento de voz",
+    asrGoogle               = "Google (recomendado)",
+    asrGoogleDesc           = "Rápido y preciso, usa paquetes de idioma de Android",
+    asrWhisper              = "Whisper (sin conexión)",
+    asrWhisperDesc          = "Totalmente sin conexión, usa modelo IA integrado",
+    summary                 = "Resumen",
+)
+
+/**
+ * Returns the appropriate [AppStrings] for the given Whisper language code.
+ * Empty string ("") = Auto — uses the Android device's default locale.
+ */
 fun stringsForLanguage(languageCode: String): AppStrings = when (languageCode) {
     "en" -> EnglishStrings
-    else -> GermanStrings   // default – covers "de", "auto", and all others
+    "fr" -> FrenchStrings
+    "es" -> SpanishStrings
+    ""   -> stringsForLanguage(Locale.getDefault().language)   // Auto → device locale
+    else -> GermanStrings   // covers "de" and all other Whisper codes
 }
 
 /** CompositionLocal that provides [AppStrings] to the entire composition tree. */
