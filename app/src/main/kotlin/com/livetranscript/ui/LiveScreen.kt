@@ -71,6 +71,7 @@ fun LiveScreen(
     autoScroll: Boolean,
     showTimestamps: Boolean,
     transcriptionLanguage: String,
+    partialText: String = "",
     onLanguageChange: (String) -> Unit,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
@@ -364,6 +365,8 @@ fun LiveScreen(
                 Text(
                     text = when {
                         !modelsReady -> strings.modelsLoading
+                        isRecording && partialText.isNotBlank() ->
+                            partialText.take(80).let { if (partialText.length > 80) "$it…" else it }
                         isRecording  -> strings.recordingRunning
                         else         -> strings.ready
                     },
@@ -371,6 +374,8 @@ fun LiveScreen(
                                  else AppTheme.Colors.textSecondary,
                     fontSize   = AppTheme.TextSize.body,
                     fontWeight = if (isRecording) FontWeight.SemiBold else FontWeight.Normal,
+                    textAlign  = TextAlign.Center,
+                    modifier   = Modifier.padding(horizontal = 24.dp),
                 )
 
                 if (transcripts.isNotEmpty() && !isRecording) {

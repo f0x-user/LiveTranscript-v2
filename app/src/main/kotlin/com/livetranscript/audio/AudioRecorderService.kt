@@ -17,17 +17,19 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.livetranscript.MainActivity
 import com.livetranscript.R
+import com.livetranscript.asr.AndroidSpeechEngine
 import com.livetranscript.asr.SherpaOnnxAsrEngine
 import com.livetranscript.diarization.SherpaSpeakerDiarizer
 import com.livetranscript.models.ModelAssetManager
+import com.livetranscript.settings.AsrBackend
 import com.livetranscript.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -40,61 +42,94 @@ class AudioRecorderService : Service() {
     private val binder = RecorderBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    // Whisper-Modus
     private var asrEngine: SherpaOnnxAsrEngine? = null
+    private val asrMutex = Mutex()
+
+    // Google-Speech-Modus
+    private var speechEngine: AndroidSpeechEngine? = null
+
+    // Immer vorhanden (Diarization läuft in beiden Modi)
     private var diarizer: SherpaSpeakerDiarizer? = null
+
     private var audioRecord: AudioRecord? = null
     private var noiseSuppressor: NoiseSuppressor? = null
     private var agcController: AutomaticGainControl? = null
     private var recordingJob: Job? = null
 
-    // Serializes ASR calls so only one segment is transcribed at a time.
-    private val asrMutex = Mutex()
+    /** Aktueller Sprecher — wird vom Diarizer-Loop aktualisiert, von beiden Engines gelesen. */
+    @Volatile private var currentSpeakerId = 0
+
+    private var activeBackend: AsrBackend = AsrBackend.GOOGLE_SPEECH
 
     var isRecording = false
         private set
 
-    // Callback to send transcription results to the UI
+    /** Callback: finales Transkriptions-Ergebnis → UI */
     var onTranscriptionResult: ((speakerId: Int, text: String) -> Unit)? = null
+
+    /** Callback: Partial-Result während des Sprechens → UI (nur Google-Speech-Modus) */
+    var onPartialResult: ((speakerId: Int, text: String) -> Unit)? = null
 
     override fun onCreate() {
         super.onCreate()
-
-        // SCHRITT 1: Modelle kopieren — SYNCHRON, BLOCKIEREND
         val modelsReady = ModelAssetManager.prepareModels(this)
         if (!modelsReady) {
             Log.e(TAG, "Models not ready — stopping")
             stopSelf()
             return
         }
-
-        // SCHRITT 2: sherpa-onnx initialisieren
-        initializeSherpaOnnx()
-
-        // SCHRITT 3: Foreground Service starten
+        initializeEngines()
         startForeground(NOTIFICATION_ID, buildNotification())
-
-        Log.d(TAG, "AudioRecorderService created")
+        Log.d(TAG, "AudioRecorderService created (backend=$activeBackend)")
     }
 
-    private fun initializeSherpaOnnx() {
+    private fun initializeEngines() {
+        val repo = SettingsRepository(this)
+        val language = repo.getLanguageSync()
+        activeBackend = repo.getAsrBackendSync()
+
+        // Diarizer läuft immer (WeSpeaker für Speaker-Erkennung)
         try {
-            val language = SettingsRepository(this).getLanguageSync()
-            asrEngine = SherpaOnnxAsrEngine(this, language).also { it.initialize() }
             diarizer = SherpaSpeakerDiarizer(this).also { it.initialize() }
-            Log.d(TAG, "SherpaOnnx initialized (lang=$language): ASR=${asrEngine?.isInitialized}, Diarizer=${diarizer?.isInitialized}")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize SherpaOnnx", e)
+            Log.e(TAG, "Diarizer init failed", e)
+        }
+
+        when (activeBackend) {
+            AsrBackend.WHISPER -> {
+                try {
+                    asrEngine = SherpaOnnxAsrEngine(this, language).also { it.initialize() }
+                    Log.d(TAG, "Whisper initialized (lang=$language)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Whisper init failed", e)
+                }
+            }
+            AsrBackend.GOOGLE_SPEECH -> {
+                speechEngine = AndroidSpeechEngine(
+                    context         = this,
+                    language        = language,
+                    onResult        = { text ->
+                        onTranscriptionResult?.invoke(currentSpeakerId, text)
+                    },
+                    onPartialResult = { text ->
+                        onPartialResult?.invoke(currentSpeakerId, text)
+                    },
+                )
+                Log.d(TAG, "Google Speech Engine ready (lang=$language)")
+            }
         }
     }
 
-    /** Reinitialize ASR with a new language. Safe to call while not recording. */
+    /** Whisper-Modus: Sprache neu laden (nur während Pause). */
     fun reloadLanguage(language: String) {
         if (isRecording) return
+        if (activeBackend != AsrBackend.WHISPER) return
         serviceScope.launch {
             asrMutex.withLock {
                 asrEngine?.release()
-                asrEngine = SherpaOnnxAsrEngine(this@AudioRecorderService, language).also { it.initialize() }
-                Log.d(TAG, "ASR language reloaded: $language")
+                asrEngine = SherpaOnnxAsrEngine(this@AudioRecorderService, language)
+                    .also { it.initialize() }
             }
         }
     }
@@ -115,72 +150,76 @@ class AudioRecorderService : Service() {
         val bufferSize = AudioRecord.getMinBufferSize(
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_FLOAT
+            AudioFormat.ENCODING_PCM_FLOAT,
         ).coerceAtLeast(CHUNK_SIZE_BYTES)
 
         audioRecord = AudioRecord(
-            // VOICE_RECOGNITION applies device-side speech pre-processing
-            // (echo cancellation, beam-forming on supported devices)
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_FLOAT,
-            bufferSize
+            bufferSize,
         )
 
-        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioRecord initialization failed")
-            return
+        val audioOk = audioRecord?.state == AudioRecord.STATE_INITIALIZED
+        if (!audioOk) {
+            Log.w(TAG, "AudioRecord init failed — diarization disabled")
+            audioRecord?.release()
+            audioRecord = null
+        } else {
+            val sessionId = audioRecord!!.audioSessionId
+            noiseSuppressor = if (NoiseSuppressor.isAvailable())
+                NoiseSuppressor.create(sessionId)?.also { it.enabled = true } else null
+            agcController   = if (AutomaticGainControl.isAvailable())
+                AutomaticGainControl.create(sessionId)?.also { it.enabled = true } else null
+            audioRecord?.startRecording()
         }
 
-        val sessionId = audioRecord!!.audioSessionId
-
-        // Hardware noise suppressor — reduces wind, HVAC, keyboard noise
-        noiseSuppressor = if (NoiseSuppressor.isAvailable()) {
-            NoiseSuppressor.create(sessionId)?.also { it.enabled = true }
-        } else null
-
-        // Automatic gain control — boosts quiet voices (table-distance recording)
-        agcController = if (AutomaticGainControl.isAvailable()) {
-            AutomaticGainControl.create(sessionId)?.also { it.enabled = true }
-        } else null
-
-        audioRecord?.startRecording()
         isRecording = true
-        Log.d(TAG, "Recording started — NoiseSuppressor=${noiseSuppressor != null}, AGC=${agcController != null}")
 
-        recordingJob = serviceScope.launch {
-            processAudioLoop()
+        when (activeBackend) {
+            AsrBackend.WHISPER -> {
+                recordingJob = serviceScope.launch { processAudioLoop() }
+                Log.d(TAG, "Recording started — Whisper mode (NoiseSuppressor=${noiseSuppressor != null}, AGC=${agcController != null})")
+            }
+            AsrBackend.GOOGLE_SPEECH -> {
+                if (audioOk) recordingJob = serviceScope.launch { diarizerOnlyLoop() }
+                speechEngine?.start()
+                Log.d(TAG, "Recording started — Google Speech mode (AudioRecord=$audioOk)")
+            }
         }
     }
 
     fun stopRecording() {
         if (!isRecording) return
         isRecording = false
+
+        speechEngine?.stop()
+
         recordingJob?.cancel()
         recordingJob = null
-        noiseSuppressor?.release()
-        noiseSuppressor = null
-        agcController?.release()
-        agcController = null
+
+        noiseSuppressor?.release(); noiseSuppressor = null
+        agcController?.release();   agcController   = null
         audioRecord?.stop()
-        audioRecord?.release()
-        audioRecord = null
+        audioRecord?.release();     audioRecord = null
+
         Log.d(TAG, "Recording stopped")
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // WHISPER-MODUS: AudioRecord → WeSpeaker + Whisper
+    // ─────────────────────────────────────────────────────────────────────────
 
     private suspend fun processAudioLoop() {
         val buffer = FloatArray(CHUNK_SIZE_SAMPLES)
         val accumulator = mutableListOf<Float>()
 
-        // Schwellwerte für VOICE_RECOGNITION + AGC:
-        //   Unterdrücktes Umgebungsrauschen → RMS ≈ 0.001–0.003
-        //   Sprache (auch aus ~1 m Entfernung mit AGC) → RMS ≈ 0.005–0.15
-        val voiceThreshold   = 0.005f  // Sprache aktiv (war 0.008, sensibler für Distanzaufnahmen)
-        val silenceThreshold = 0.002f  // Darunter = Stille (war 0.003)
+        val voiceThreshold   = 0.005f
+        val silenceThreshold = 0.002f
         var silenceFrames    = 0
-        var voiceFrames      = 0       // Chunks mit Sprachpegel in diesem Segment
-        val maxSilenceFrames = 5       // 5 × 100 ms = 500 ms Stille → an ASR senden (war 1,5 s)
+        var voiceFrames      = 0
+        val maxSilenceFrames = 5   // 5 × 100 ms = 500 ms Stille → ASR
 
         while (currentCoroutineContext().isActive && isRecording) {
             val read = audioRecord?.read(buffer, 0, CHUNK_SIZE_SAMPLES, AudioRecord.READ_BLOCKING) ?: break
@@ -190,11 +229,10 @@ class AudioRecorderService : Service() {
             accumulator.addAll(chunk)
 
             val rms = chunk.map { it * it }.average().let { Math.sqrt(it).toFloat() }
-
             when {
                 rms >= voiceThreshold  -> { voiceFrames++; silenceFrames = 0 }
                 rms < silenceThreshold -> silenceFrames++
-                else                   -> silenceFrames = 0  // Transition zone
+                else                   -> silenceFrames = 0
             }
 
             val enoughSilence = silenceFrames >= maxSilenceFrames
@@ -203,39 +241,77 @@ class AudioRecorderService : Service() {
             if ((enoughSilence || bufferFull) && accumulator.size >= MIN_SAMPLES_FOR_TRANSCRIPTION) {
                 if (voiceFrames >= MIN_VOICE_FRAMES) {
                     val samples = accumulator.toFloatArray()
-                    accumulator.clear()
-                    voiceFrames   = 0
-                    silenceFrames = 0
-                    // Launch ASR in background so audio recording continues uninterrupted.
-                    // asrMutex ensures segments are processed one at a time (ASR is not thread-safe).
+                    accumulator.clear(); voiceFrames = 0; silenceFrames = 0
                     serviceScope.launch {
-                        asrMutex.withLock { processSegment(samples) }
+                        asrMutex.withLock { processWhisperSegment(samples) }
                     }
                 } else {
-                    Log.d(TAG, "Discarding segment — only noise (voiceFrames=$voiceFrames)")
-                    accumulator.clear()
-                    voiceFrames   = 0
-                    silenceFrames = 0
+                    accumulator.clear(); voiceFrames = 0; silenceFrames = 0
                 }
             }
         }
 
-        // Drain remaining audio when recording stops
         if (accumulator.size >= MIN_SAMPLES_FOR_TRANSCRIPTION && voiceFrames >= MIN_VOICE_FRAMES) {
             val samples = accumulator.toFloatArray()
-            serviceScope.launch {
-                asrMutex.withLock { processSegment(samples) }
-            }
+            serviceScope.launch { asrMutex.withLock { processWhisperSegment(samples) } }
         }
     }
 
-    private fun processSegment(samples: FloatArray) {
-        val speakerId = diarizer?.identifySpeaker(samples) ?: -1
+    private fun processWhisperSegment(samples: FloatArray) {
+        val speakerId = diarizer?.identifySpeaker(samples) ?: 0
+        currentSpeakerId = speakerId
         val text = asrEngine?.transcribe(samples)
         if (!text.isNullOrBlank()) {
-            Log.d(TAG, "Speaker $speakerId: $text")
+            Log.d(TAG, "Whisper Speaker $speakerId: $text")
             onTranscriptionResult?.invoke(speakerId, text)
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GOOGLE-SPEECH-MODUS: AudioRecord nur für Diarization
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private suspend fun diarizerOnlyLoop() {
+        val buffer = FloatArray(CHUNK_SIZE_SAMPLES)
+        val accumulator = mutableListOf<Float>()
+
+        val voiceThreshold   = 0.005f
+        val silenceThreshold = 0.002f
+        var silenceFrames    = 0
+        var voiceFrames      = 0
+        val maxSilenceFrames = 5
+
+        while (currentCoroutineContext().isActive && isRecording) {
+            val read = audioRecord?.read(buffer, 0, CHUNK_SIZE_SAMPLES, AudioRecord.READ_BLOCKING) ?: break
+            if (read == AudioRecord.ERROR_DEAD_OBJECT || read == AudioRecord.ERROR_INVALID_OPERATION) break
+            if (read <= 0) continue
+
+            val chunk = buffer.take(read)
+            accumulator.addAll(chunk)
+
+            val rms = chunk.map { it * it }.average().let { Math.sqrt(it).toFloat() }
+            when {
+                rms >= voiceThreshold  -> { voiceFrames++; silenceFrames = 0 }
+                rms < silenceThreshold -> silenceFrames++
+                else                   -> silenceFrames = 0
+            }
+
+            val enoughSilence = silenceFrames >= maxSilenceFrames
+            val bufferFull    = accumulator.size >= MAX_ACCUMULATOR_SAMPLES
+
+            if ((enoughSilence || bufferFull) && accumulator.size >= MIN_SAMPLES_FOR_TRANSCRIPTION) {
+                if (voiceFrames >= MIN_VOICE_FRAMES) {
+                    val samples = accumulator.toFloatArray()
+                    accumulator.clear(); voiceFrames = 0; silenceFrames = 0
+                    serviceScope.launch {
+                        currentSpeakerId = diarizer?.identifySpeaker(samples) ?: 0
+                    }
+                } else {
+                    accumulator.clear(); voiceFrames = 0; silenceFrames = 0
+                }
+            }
+        }
+        Log.d(TAG, "Diarizer-only loop ended")
     }
 
     override fun onDestroy() {
@@ -251,14 +327,15 @@ class AudioRecorderService : Service() {
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         if (manager.getNotificationChannel(channelId) == null) {
             manager.createNotificationChannel(
-                NotificationChannel(channelId, "LiveTranscript Recording", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(channelId, "LiveTranscript Recording",
+                                    NotificationManager.IMPORTANCE_LOW)
                     .apply { description = "Live transcription in progress" }
             )
         }
         val pendingIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("LiveTranscript")
@@ -275,10 +352,10 @@ class AudioRecorderService : Service() {
         const val ACTION_STOP   = "com.livetranscript.STOP_RECORDING"
         private const val NOTIFICATION_ID = 1001
         const val SAMPLE_RATE = 16000
-        private const val CHUNK_SIZE_SAMPLES = 1600          // 100 ms per chunk (feinere VAD-Granularität)
+        private const val CHUNK_SIZE_SAMPLES = 1600          // 100 ms per chunk
         private const val CHUNK_SIZE_BYTES   = CHUNK_SIZE_SAMPLES * 4
-        private const val MAX_ACCUMULATOR_SAMPLES        = SAMPLE_RATE * 2      // 2 s max (war 4 s)
-        private const val MIN_SAMPLES_FOR_TRANSCRIPTION  = SAMPLE_RATE / 2      // 0,5 s minimum (war 0,75 s)
-        private const val MIN_VOICE_FRAMES = 2               // Mind. 200 ms Sprache erforderlich
+        private const val MAX_ACCUMULATOR_SAMPLES       = SAMPLE_RATE * 2   // 2 s
+        private const val MIN_SAMPLES_FOR_TRANSCRIPTION = SAMPLE_RATE / 2   // 0,5 s
+        private const val MIN_VOICE_FRAMES = 2
     }
 }

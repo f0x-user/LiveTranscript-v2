@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.livetranscript.settings.AsrBackend
 import com.livetranscript.settings.SettingsViewModel
 import com.livetranscript.settings.ThemeMode
 
@@ -90,6 +91,24 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
+            // ── ASR Backend ───────────────────────────────────────────────
+            SectionHeader(strings.asrBackend)
+
+            listOf(
+                AsrBackend.GOOGLE_SPEECH to (strings.asrGoogle to strings.asrGoogleDesc),
+                AsrBackend.WHISPER       to (strings.asrWhisper to strings.asrWhisperDesc),
+            ).forEach { (backend, labels) ->
+                val (label, desc) = labels
+                OptionRowWithDesc(
+                    label    = label,
+                    desc     = desc,
+                    selected = state.asrBackend == backend,
+                    onClick  = { settingsViewModel.setAsrBackend(backend) },
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
             // ── Info ──────────────────────────────────────────────────────
             SectionHeader(strings.info)
             Text(
@@ -117,6 +136,28 @@ private fun SectionHeader(title: String) {
         color      = MaterialTheme.colorScheme.primary,
         modifier   = Modifier.padding(top = 8.dp, bottom = 4.dp),
     )
+}
+
+@Composable
+private fun OptionRowWithDesc(label: String, desc: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier          = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(modifier = Modifier.width(4.dp))
+        Column {
+            Text(label, fontSize = 15.sp)
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable

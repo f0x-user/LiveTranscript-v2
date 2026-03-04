@@ -43,8 +43,25 @@ class SettingsRepository(private val context: Context) {
         context.settingsDataStore.edit { it[PreferenceKeys.TRANSCRIPTION_LANGUAGE] = code }
     }
 
+    val asrBackend: Flow<AsrBackend> = context.settingsDataStore.data.map { prefs ->
+        prefs[PreferenceKeys.ASR_BACKEND]
+            ?.let { runCatching { AsrBackend.valueOf(it) }.getOrNull() }
+            ?: AsrBackend.GOOGLE_SPEECH
+    }
+
+    suspend fun setAsrBackend(backend: AsrBackend) {
+        context.settingsDataStore.edit { it[PreferenceKeys.ASR_BACKEND] = backend.name }
+    }
+
     /** Synchronous read used during service initialisation (called before coroutines are set up). */
     fun getLanguageSync(): String = runBlocking {
         context.settingsDataStore.data.first()[PreferenceKeys.TRANSCRIPTION_LANGUAGE] ?: "de"
+    }
+
+    /** Synchronous read used during service initialisation. */
+    fun getAsrBackendSync(): AsrBackend = runBlocking {
+        context.settingsDataStore.data.first()[PreferenceKeys.ASR_BACKEND]
+            ?.let { runCatching { AsrBackend.valueOf(it) }.getOrNull() }
+            ?: AsrBackend.GOOGLE_SPEECH
     }
 }

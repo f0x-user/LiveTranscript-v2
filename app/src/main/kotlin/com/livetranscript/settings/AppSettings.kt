@@ -9,6 +9,9 @@ import androidx.datastore.preferences.preferencesDataStore
 
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
 
+/** Welche ASR-Engine verwendet wird. */
+enum class AsrBackend { GOOGLE_SPEECH, WHISPER }
+
 /** Single DataStore instance scoped to the application. */
 val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -17,6 +20,7 @@ object PreferenceKeys {
     val AUTO_SCROLL            = booleanPreferencesKey("auto_scroll")
     val SHOW_TIMESTAMPS        = booleanPreferencesKey("show_timestamps")
     val TRANSCRIPTION_LANGUAGE = stringPreferencesKey("transcription_language")
+    val ASR_BACKEND            = stringPreferencesKey("asr_backend")
 }
 
 /**

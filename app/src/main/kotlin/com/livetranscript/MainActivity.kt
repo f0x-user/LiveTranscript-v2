@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
     private var isRecording by mutableStateOf(false)
     private var modelsReady by mutableStateOf(false)
     private var currentScreen by mutableStateOf("main")
+    private var partialText by mutableStateOf("")
     private lateinit var settingsViewModel: SettingsViewModel
 
     private val serviceConnection = object : ServiceConnection {
@@ -47,8 +48,12 @@ class MainActivity : ComponentActivity() {
             serviceBound = true
             recorderService?.onTranscriptionResult = { speakerId, text ->
                 runOnUiThread {
+                    partialText = ""
                     transcripts.add(TranscriptEntry(speakerId = speakerId, text = text))
                 }
+            }
+            recorderService?.onPartialResult = { _, text ->
+                runOnUiThread { partialText = text }
             }
             Log.d(TAG, "Service connected")
         }
@@ -101,6 +106,7 @@ class MainActivity : ComponentActivity() {
                                 autoScroll            = settingsState.autoScroll,
                                 showTimestamps        = settingsState.showTimestamps,
                                 transcriptionLanguage = settingsState.transcriptionLanguage,
+                                partialText           = partialText,
                                 onLanguageChange      = { settingsViewModel.setLanguage(it) },
                                 onStartRecording      = { startRecording() },
                                 onStopRecording       = { stopRecording() },
@@ -156,6 +162,7 @@ class MainActivity : ComponentActivity() {
         val service = recorderService ?: return
         service.stopRecording()
         isRecording = false
+        partialText = ""
     }
 
     override fun onDestroy() {

@@ -51,6 +51,12 @@ data class AppStrings(
     // Language picker
     val selectLanguage: String,
     val autoDetect: String,
+    // ASR backend
+    val asrBackend: String,
+    val asrGoogle: String,
+    val asrGoogleDesc: String,
+    val asrWhisper: String,
+    val asrWhisperDesc: String,
 )
 
 val GermanStrings = AppStrings(
@@ -91,6 +97,11 @@ val GermanStrings = AppStrings(
     formatSrtDesc           = "Für Videountertitel",
     selectLanguage          = "Sprache wählen",
     autoDetect              = "Automatisch",
+    asrBackend              = "Spracherkennung",
+    asrGoogle               = "Google (empfohlen)",
+    asrGoogleDesc           = "Schnell, hohe Genauigkeit, nutzt Android-Sprachpakete",
+    asrWhisper              = "Whisper (offline)",
+    asrWhisperDesc          = "Vollständig offline, nutzt eingebettetes KI-Modell",
 )
 
 val EnglishStrings = AppStrings(
@@ -131,6 +142,11 @@ val EnglishStrings = AppStrings(
     formatSrtDesc           = "For video subtitles",
     selectLanguage          = "Select language",
     autoDetect              = "Auto-detect",
+    asrBackend              = "Speech recognition",
+    asrGoogle               = "Google (recommended)",
+    asrGoogleDesc           = "Fast, high accuracy, uses Android language packs",
+    asrWhisper              = "Whisper (offline)",
+    asrWhisperDesc          = "Fully offline, uses embedded AI model",
 )
 
 /** Returns the appropriate [AppStrings] for the given Whisper language code. */
