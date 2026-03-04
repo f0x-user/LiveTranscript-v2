@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
@@ -36,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.livetranscript.ui.theme.AppTheme
@@ -65,11 +68,6 @@ private val LANG_FLAG = mapOf(
     "es" to "🇪🇸", "it" to "🇮🇹", "pt" to "🇵🇹", "tr" to "🇹🇷",
     "nl" to "🇳🇱", "pl" to "🇵🇱", "ru" to "🇷🇺", "zh" to "🇨🇳",
     "ja" to "🇯🇵", "ko" to "🇰🇷", "ar" to "🇸🇦",
-)
-
-private val SEGMENT_LANGS = listOf("", "de", "en", "fr", "es")
-private val SEGMENT_LABELS = mapOf(
-    "" to "Auto", "de" to "DE", "en" to "EN", "fr" to "FR", "es" to "ES",
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,175 +135,79 @@ private fun LiveTopAppBar(
 }
 
 /**
- * Pill-shaped segment control for the five primary language options.
- * Non-primary languages are handled via a small dialog.
+ * Centered single dropdown for all supported transcription languages.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LanguageSegmentRow(
+private fun LanguageDropdown(
     selectedLanguage: String,
     onSelect: (String) -> Unit,
     isDark: Boolean,
     isRecording: Boolean,
 ) {
-    val chipSelected  = if (isDark) AppTheme.DarkColors.chipSelected  else AppTheme.LightColors.chipSelected
-    val chipDefault   = if (isDark) AppTheme.DarkColors.chipDefault   else AppTheme.LightColors.chipDefault
-    val chipBorder    = if (isDark) AppTheme.DarkColors.chipBorder    else AppTheme.LightColors.chipBorder
-    val textPrimary   = if (isDark) AppTheme.DarkColors.textPrimary   else AppTheme.LightColors.textPrimary
-    val textSecondary = if (isDark) AppTheme.DarkColors.textSecondary else AppTheme.LightColors.textSecondary
-
-    val isOther  = selectedLanguage !in SEGMENT_LANGS
-    var showMore by remember { mutableStateOf(false) }
-
-    if (showMore) {
-        LanguagePickerDialog(
-            selectedLanguage = selectedLanguage,
-            isDark           = isDark,
-            onSelect         = { onSelect(it); showMore = false },
-            onDismiss        = { showMore = false },
-        )
-    }
-
-    Row(
-        modifier              = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        SEGMENT_LANGS.forEach { code ->
-            val selected = (selectedLanguage == code) && !isOther
-            SegmentPill(
-                label         = "${LANG_FLAG[code] ?: "🌍"} ${SEGMENT_LABELS[code]}",
-                selected      = selected,
-                enabled       = !isRecording,
-                chipSelected  = chipSelected,
-                chipDefault   = chipDefault,
-                chipBorder    = chipBorder,
-                textPrimary   = textPrimary,
-                textSecondary = textSecondary,
-                onClick       = { if (!isRecording) onSelect(code) },
-                modifier      = Modifier.weight(1f),
-            )
-        }
-        // "More" pill — highlighted if current language is outside the segment
-        SegmentPill(
-            label         = if (isOther) "${LANG_FLAG[selectedLanguage] ?: "🌐"}" else "···",
-            selected      = isOther,
-            enabled       = !isRecording,
-            chipSelected  = chipSelected,
-            chipDefault   = chipDefault,
-            chipBorder    = chipBorder,
-            textPrimary   = textPrimary,
-            textSecondary = textSecondary,
-            onClick       = { if (!isRecording) showMore = true },
-            modifier      = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun SegmentPill(
-    label: String,
-    selected: Boolean,
-    enabled: Boolean,
-    chipSelected: Color,
-    chipDefault: Color,
-    chipBorder: Color,
-    textPrimary: Color,
-    textSecondary: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val containerColor = when {
-        !enabled && selected -> chipSelected.copy(alpha = 0.5f)
-        !enabled             -> chipDefault.copy(alpha = 0.4f)
-        selected             -> chipSelected
-        else                 -> chipDefault
-    }
-    val contentColor = when {
-        !enabled && selected -> Color.White.copy(alpha = 0.5f)
-        !enabled             -> textSecondary.copy(alpha = 0.5f)
-        selected             -> Color.White
-        else                 -> textPrimary
-    }
-    val borderColor = when {
-        selected -> Color.Transparent
-        !enabled -> chipBorder.copy(alpha = 0.4f)
-        else     -> chipBorder
-    }
-
-    Surface(
-        onClick         = onClick,
-        modifier        = modifier.height(36.dp),
-        shape           = AppTheme.Shapes.pill,
-        color           = containerColor,
-        border          = BorderStroke(1.dp, borderColor),
-        enabled         = enabled,
-        tonalElevation  = 0.dp,
-        shadowElevation = if (selected) 2.dp else 0.dp,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text       = label,
-                color      = contentColor,
-                fontSize   = 11.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines   = 1,
-                overflow   = TextOverflow.Clip,
-            )
-        }
-    }
-}
-
-/**
- * Dialog for selecting languages outside the five-pill segment.
- */
-@Composable
-private fun LanguagePickerDialog(
-    selectedLanguage: String,
-    isDark: Boolean,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
+    val colors = if (isDark) AppTheme.DarkColors else AppTheme.LightColors
     val allLanguages = listOf(
         "" to "Auto", "de" to "Deutsch", "en" to "English", "fr" to "Français",
         "es" to "Español", "it" to "Italiano", "pt" to "Português", "tr" to "Türkçe",
         "nl" to "Nederlands", "pl" to "Polski", "ru" to "Русский", "zh" to "中文",
         "ja" to "日本語", "ko" to "한국어", "ar" to "العربية",
     )
-    val colors = if (isDark) AppTheme.DarkColors else AppTheme.LightColors
+    val currentName = allLanguages.firstOrNull { it.first == selectedLanguage }?.second ?: "Auto"
+    val displayValue = "${LANG_FLAG[selectedLanguage] ?: "🌍"} $currentName"
 
-    AlertDialog(
-        onDismissRequest  = onDismiss,
-        containerColor    = colors.dialog,
-        titleContentColor = colors.textPrimary,
-        title = { Text("Sprache / Language", fontWeight = FontWeight.SemiBold) },
-        text  = {
-            LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                items(allLanguages) { (code, name) ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier          = Modifier.fillMaxWidth(),
-                    ) {
-                        RadioButton(
-                            selected = selectedLanguage == code,
-                            onClick  = { onSelect(code) },
-                        )
-                        Text(
-                            text  = "${LANG_FLAG[code] ?: "🌍"} $name",
-                            color = colors.textPrimary,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        ExposedDropdownMenuBox(
+            expanded         = expanded,
+            onExpandedChange = { if (!isRecording) expanded = it },
+            modifier         = Modifier.widthIn(max = 280.dp),
+        ) {
+            OutlinedTextField(
+                value         = displayValue,
+                onValueChange = {},
+                readOnly      = true,
+                singleLine    = true,
+                enabled       = !isRecording,
+                trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                shape         = AppTheme.Shapes.pill,
+                colors        = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor   = colors.accentBlue,
+                    unfocusedBorderColor = colors.chipBorder,
+                    disabledBorderColor  = colors.chipBorder.copy(alpha = 0.4f),
+                    focusedTextColor     = colors.textPrimary,
+                    unfocusedTextColor   = colors.textPrimary,
+                    disabledTextColor    = colors.textSecondary,
+                    focusedContainerColor    = colors.chipDefault,
+                    unfocusedContainerColor  = colors.chipDefault,
+                    disabledContainerColor   = colors.chipDefault.copy(alpha = 0.5f),
+                ),
+                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable),
+            )
+            ExposedDropdownMenu(
+                expanded         = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                allLanguages.forEach { (code, name) ->
+                    DropdownMenuItem(
+                        text    = {
+                            Text(
+                                text  = "${LANG_FLAG[code] ?: "🌍"} $name",
+                                color = if (code == selectedLanguage) colors.accentBlue else colors.textPrimary,
+                                fontWeight = if (code == selectedLanguage) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        },
+                        onClick = { onSelect(code); expanded = false },
+                    )
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Abbrechen", color = colors.textSecondary)
-            }
-        },
-    )
+        }
+    }
 }
 
 /**
@@ -546,8 +448,8 @@ fun LiveScreen(
                 isRecording = isRecording,
             )
 
-            // [2] Language segment control
-            LanguageSegmentRow(
+            // [2] Language dropdown
+            LanguageDropdown(
                 selectedLanguage = transcriptionLanguage,
                 onSelect         = onLanguageChange,
                 isDark           = isDark,
@@ -644,21 +546,20 @@ fun LiveScreen(
                 }
             }
 
-            // [4] Bottom section: FAB left | status+delete right | summary card
-            Column(
-                modifier = Modifier
+            // [4] Bottom section: 3 equal columns — FAB | Delete | Summary
+            Row(
+                modifier              = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(top = 8.dp, bottom = 12.dp),
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                // FAB row: record button (left) + status text + delete button (right)
-                Row(
-                    modifier          = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                // [FAB] — Record / Stop
+                Box(
+                    modifier         = Modifier.weight(1f).padding(4.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    // Left — Record FAB
                     RecordingFab(
                         isRecording = isRecording,
                         modelsReady = modelsReady,
@@ -667,47 +568,63 @@ fun LiveScreen(
                         pulseScale  = pulseScale,
                         isDark      = isDark,
                     )
+                }
 
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    // Centre — status text (takes remaining width)
-                    Text(
-                        text = when {
-                            !modelsReady -> strings.modelsLoading
-                            isRecording  -> strings.recordingRunning
-                            else         -> strings.ready
-                        },
-                        color      = if (isRecording) colors.recordingLabel else colors.textSecondary,
-                        fontSize   = AppTheme.TextSize.body,
-                        fontWeight = if (isRecording) FontWeight.SemiBold else FontWeight.Normal,
-                        modifier   = Modifier.weight(1f),
+                // [Delete] — fades in when there is content and not recording
+                Box(
+                    modifier         = Modifier.weight(1f).padding(4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val deleteAlpha by animateFloatAsState(
+                        targetValue = if (transcripts.isNotEmpty() && !isRecording) 1f else 0f,
+                        label       = "delete-alpha",
                     )
-
-                    // Right — Delete button (visible when there is content and not recording)
-                    AnimatedVisibility(visible = transcripts.isNotEmpty() && !isRecording) {
-                        TextButton(
-                            onClick = onClear,
-                            colors  = ButtonDefaults.textButtonColors(
-                                contentColor = colors.textSecondary.copy(alpha = 0.55f),
-                            ),
+                    Surface(
+                        onClick         = { if (transcripts.isNotEmpty() && !isRecording) onClear() },
+                        modifier        = Modifier.fillMaxWidth().height(68.dp).alpha(deleteAlpha),
+                        shape           = AppTheme.Shapes.card,
+                        color           = Color.Transparent,
+                        border          = BorderStroke(1.dp, colors.cardBorder),
+                        tonalElevation  = 0.dp,
+                        shadowElevation = 1.dp,
+                    ) {
+                        Column(
+                            modifier            = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text(strings.deleteAll, fontSize = AppTheme.TextSize.caption)
+                            Icon(
+                                imageVector        = Icons.Filled.Delete,
+                                contentDescription = null,
+                                tint               = colors.textSecondary,
+                                modifier           = Modifier.size(18.dp),
+                            )
+                            Text(
+                                text       = strings.deleteAll,
+                                color      = colors.textSecondary,
+                                fontSize   = AppTheme.TextSize.caption,
+                                fontWeight = FontWeight.Medium,
+                                maxLines   = 1,
+                                overflow   = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Summary / save card — full width
-                InfoCard(
-                    icon     = Icons.Filled.Description,
-                    label    = strings.summary,
-                    isDark   = isDark,
-                    onClick  = { if (transcripts.isNotEmpty()) showSaveDialog = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                )
+                // [Summary] — opens save dialog
+                Box(
+                    modifier         = Modifier.weight(1f).padding(4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    InfoCard(
+                        icon     = Icons.Filled.Description,
+                        label    = strings.summary,
+                        isDark   = isDark,
+                        onClick  = { if (transcripts.isNotEmpty()) showSaveDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
     }
