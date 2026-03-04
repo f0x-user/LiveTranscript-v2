@@ -146,46 +146,46 @@ class AudioRecorderService : Service() {
 
     fun startRecording() {
         if (isRecording) return
-
-        val bufferSize = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_FLOAT,
-        ).coerceAtLeast(CHUNK_SIZE_BYTES)
-
-        audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_FLOAT,
-            bufferSize,
-        )
-
-        val audioOk = audioRecord?.state == AudioRecord.STATE_INITIALIZED
-        if (!audioOk) {
-            Log.w(TAG, "AudioRecord init failed — diarization disabled")
-            audioRecord?.release()
-            audioRecord = null
-        } else {
-            val sessionId = audioRecord!!.audioSessionId
-            noiseSuppressor = if (NoiseSuppressor.isAvailable())
-                NoiseSuppressor.create(sessionId)?.also { it.enabled = true } else null
-            agcController   = if (AutomaticGainControl.isAvailable())
-                AutomaticGainControl.create(sessionId)?.also { it.enabled = true } else null
-            audioRecord?.startRecording()
-        }
-
         isRecording = true
 
         when (activeBackend) {
             AsrBackend.WHISPER -> {
+                // Whisper nutzt AudioRecord exklusiv für Aufnahme + Diarisierung
+                val bufferSize = AudioRecord.getMinBufferSize(
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_FLOAT,
+                ).coerceAtLeast(CHUNK_SIZE_BYTES)
+
+                audioRecord = AudioRecord(
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_FLOAT,
+                    bufferSize,
+                )
+
+                if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                    Log.e(TAG, "AudioRecord init failed")
+                    audioRecord?.release(); audioRecord = null
+                    isRecording = false; return
+                }
+                val sessionId = audioRecord!!.audioSessionId
+                noiseSuppressor = if (NoiseSuppressor.isAvailable())
+                    NoiseSuppressor.create(sessionId)?.also { it.enabled = true } else null
+                agcController   = if (AutomaticGainControl.isAvailable())
+                    AutomaticGainControl.create(sessionId)?.also { it.enabled = true } else null
+                audioRecord?.startRecording()
                 recordingJob = serviceScope.launch { processAudioLoop() }
-                Log.d(TAG, "Recording started — Whisper mode (NoiseSuppressor=${noiseSuppressor != null}, AGC=${agcController != null})")
+                Log.d(TAG, "Recording started — Whisper mode")
             }
             AsrBackend.GOOGLE_SPEECH -> {
-                if (audioOk) recordingJob = serviceScope.launch { diarizerOnlyLoop() }
+                // Google SpeechRecognizer verwaltet das Mikrofon selbst;
+                // kein paralleler AudioRecord (würde Mikrofon-Konflikt erzeugen).
+                // Diarisierung entfällt im Google-Speech-Modus — alle Ergebnisse → Speaker 0.
+                currentSpeakerId = 0
                 speechEngine?.start()
-                Log.d(TAG, "Recording started — Google Speech mode (AudioRecord=$audioOk)")
+                Log.d(TAG, "Recording started — Google Speech mode (no AudioRecord)")
             }
         }
     }

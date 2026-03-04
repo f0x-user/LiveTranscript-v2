@@ -60,7 +60,7 @@ class AndroidSpeechEngine(
                      RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale.toLanguageTag())
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            // Kein EXTRA_PREFER_OFFLINE: Online-Fallback erlauben falls kein lokales Sprachpaket
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 300L)
         }
@@ -92,23 +92,26 @@ class AndroidSpeechEngine(
         }
 
         override fun onError(error: Int) {
-            Log.d(TAG, "Error: ${errorName(error)}")
+            Log.w(TAG, "Error: ${errorName(error)}")
             if (!active) return
             val delayMs = when (error) {
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
-                SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> 600L
-                SpeechRecognizer.ERROR_AUDIO,
+                SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> 1000L
+                SpeechRecognizer.ERROR_AUDIO             -> 2000L  // Mikrofon kurzzeitig belegt
                 SpeechRecognizer.ERROR_NETWORK,
-                SpeechRecognizer.ERROR_SERVER            -> 1200L
-                else                                     -> 0L   // NO_MATCH, SPEECH_TIMEOUT usw.
+                SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+                SpeechRecognizer.ERROR_SERVER            -> 2000L
+                ERROR_LANGUAGE_NOT_SUPPORTED             -> 3000L  // Sprachpaket fehlt
+                else                                     -> 300L   // NO_MATCH, SPEECH_TIMEOUT usw.
             }
-            if (delayMs > 0) mainHandler.postDelayed({ listen() }, delayMs)
-            else listen()
+            mainHandler.postDelayed({ listen() }, delayMs)
         }
     }
 
     companion object {
         private const val TAG = "AndroidSpeechEngine"
+        // Introduced in API 31; defined here for backwards compatibility
+        private const val ERROR_LANGUAGE_NOT_SUPPORTED = 12
 
         private fun errorName(error: Int) = when (error) {
             SpeechRecognizer.ERROR_AUDIO                    -> "AUDIO"
