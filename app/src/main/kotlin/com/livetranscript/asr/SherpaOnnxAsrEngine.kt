@@ -12,7 +12,7 @@ import com.livetranscript.models.ModelAssetManager
 /**
  * Whisper-based offline ASR engine using the sherpa-onnx library.
  *
- * Uses the Whisper Tiny model (int8-quantised ONNX) for on-device speech recognition.
+ * Uses the Whisper Base model (int8-quantised ONNX) for on-device speech recognition.
  * Model files must be present in [ModelAssetManager] before calling [initialize].
  *
  * Thread-safety: [transcribe] is not thread-safe by itself — callers must use a
@@ -36,13 +36,13 @@ class SherpaOnnxAsrEngine(private val context: Context, private val language: St
         if (isInitialized) return
         try {
             val encoderPath = ModelAssetManager.getModelPath(
-                context, "whisper-tiny/tiny-encoder.int8.onnx"
+                context, "whisper-base/base-encoder.int8.onnx"
             )
             val decoderPath = ModelAssetManager.getModelPath(
-                context, "whisper-tiny/tiny-decoder.int8.onnx"
+                context, "whisper-base/base-decoder.int8.onnx"
             )
             val tokensPath = ModelAssetManager.getModelPath(
-                context, "whisper-tiny/tiny-tokens.txt"
+                context, "whisper-base/base-tokens.txt"
             )
 
             val whisperConfig = OfflineWhisperModelConfig(
@@ -55,7 +55,7 @@ class SherpaOnnxAsrEngine(private val context: Context, private val language: St
             val modelConfig = OfflineModelConfig(
                 whisper = whisperConfig,
                 tokens = tokensPath,
-                numThreads = 2,
+                numThreads = 4,  // 4 threads reduce inference latency on modern SoCs
                 debug = false
             )
 
@@ -117,7 +117,23 @@ class SherpaOnnxAsrEngine(private val context: Context, private val language: St
         // Reject if nothing meaningful remains or only punctuation
         if (cleaned.length < 2) return ""
         if (cleaned.all { !it.isLetterOrDigit() }) return ""
+        // Reject Whisper hallucinations: repeated short tokens like "*sieh* *sieh* *sieh*"
+        // or "Untertitel von …" repeated segments (common when audio is mostly noise).
+        if (isRepetitiveHallucination(cleaned)) return ""
         return cleaned
+    }
+
+    /**
+     * Detects Whisper hallucination patterns where the same short token repeats many times.
+     * Whisper produces these when the audio contains low-level noise but no real speech.
+     */
+    private fun isRepetitiveHallucination(text: String): Boolean {
+        val words = text.split("\\s+".toRegex()).filter { it.isNotBlank() }
+        if (words.size < 4) return false
+        // Check if more than 60% of words are identical
+        val mostCommon = words.groupingBy { it.lowercase() }.eachCount().maxByOrNull { it.value }
+        val dominantRatio = (mostCommon?.value ?: 0).toFloat() / words.size
+        return dominantRatio > 0.6f
     }
 
     /**

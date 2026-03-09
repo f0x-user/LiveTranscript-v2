@@ -27,7 +27,12 @@
       "Bash(\"$ADB\" install:*)",
       "Bash(\"/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe\":*)",
       "Bash(adb logcat:*)",
-      "Bash(\"/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe\" install:*)"
+      "Bash(\"/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe\" install:*)",
+      "Bash(cmd.exe:*)",
+      "WebSearch",
+      "Bash(./gradlew downloadWhisperBase:*)",
+      "Bash(/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe:*)",
+      "Skill(commit-commands:commit-push-pr)"
     ]
   }
 }

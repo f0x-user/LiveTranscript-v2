@@ -1,7 +1,10 @@
 package com.livetranscript.ui
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.provider.MediaStore
+import android.util.Log
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -72,6 +75,56 @@ fun transcriptToSrt(entries: List<TranscriptEntry>): String {
             appendLine("[$label] ${e.text}")
             appendLine()
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Save directly to Downloads folder (MediaStore, no permission required API 29+)
+
+/**
+ * Writes [entries] as [format] to the public Downloads folder via [MediaStore.Downloads].
+ * No WRITE_EXTERNAL_STORAGE permission is required on Android 10+ (API 29+).
+ * Returns the saved filename on success, or null on failure.
+ */
+fun saveTranscriptToDownloads(
+    context: Context,
+    entries: List<TranscriptEntry>,
+    format: SaveFormat,
+): String? {
+    val content = when (format) {
+        SaveFormat.TXT  -> transcriptToText(entries)
+        SaveFormat.CSV  -> transcriptToCsv(entries)
+        SaveFormat.JSON -> transcriptToJson(entries)
+        SaveFormat.SRT  -> transcriptToSrt(entries)
+    }
+    val ts       = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val filename = "transcript_$ts.${format.ext}"
+    val mimeType = when (format) {
+        SaveFormat.TXT, SaveFormat.SRT -> "text/plain"
+        SaveFormat.CSV                 -> "text/csv"
+        SaveFormat.JSON                -> "application/json"
+    }
+
+    val values = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, filename)
+        put(MediaStore.Downloads.MIME_TYPE, mimeType)
+        put(MediaStore.Downloads.IS_PENDING, 1)
+    }
+    val resolver = context.contentResolver
+    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: run {
+        Log.e("SaveTranscript", "MediaStore insert returned null")
+        return null
+    }
+    return try {
+        resolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+        values.clear()
+        values.put(MediaStore.Downloads.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        filename
+    } catch (e: Exception) {
+        Log.e("SaveTranscript", "Write failed", e)
+        resolver.delete(uri, null, null)
+        null
     }
 }
 

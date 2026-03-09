@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -738,7 +739,12 @@ private fun SaveTranscriptDialog(
                     val (label, desc) = labels
                     OutlinedButton(
                         onClick = {
-                            shareTranscript(context, transcripts, fmt)
+                            val filename = saveTranscriptToDownloads(context, transcripts, fmt)
+                            val msg = if (filename != null)
+                                "Gespeichert: $filename"
+                            else
+                                "Speichern fehlgeschlagen"
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             onDismiss()
                         },
                         modifier       = Modifier.fillMaxWidth(),

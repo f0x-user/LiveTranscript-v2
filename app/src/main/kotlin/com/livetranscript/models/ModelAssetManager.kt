@@ -12,9 +12,9 @@ import java.io.File
  * because the native library requires a real file path rather than an asset stream.
  *
  * Required files (relative to `assets/models/`):
- * - `whisper-tiny/tiny-encoder.int8.onnx`
- * - `whisper-tiny/tiny-decoder.int8.onnx`
- * - `whisper-tiny/tiny-tokens.txt`
+ * - `whisper-base/base-encoder.int8.onnx`
+ * - `whisper-base/base-decoder.int8.onnx`
+ * - `whisper-base/base-tokens.txt`
  * - `wespeaker/model.onnx`
  *
  * Call [prepareModels] once on service start before initialising any engine.
@@ -26,9 +26,9 @@ object ModelAssetManager {
     private const val TAG = "ModelAssetManager"
 
     private val REQUIRED_MODELS = listOf(
-        "whisper-tiny/tiny-encoder.int8.onnx",
-        "whisper-tiny/tiny-decoder.int8.onnx",
-        "whisper-tiny/tiny-tokens.txt",
+        "whisper-base/base-encoder.int8.onnx",
+        "whisper-base/base-decoder.int8.onnx",
+        "whisper-base/base-tokens.txt",
         "wespeaker/model.onnx"
     )
 

@@ -96,8 +96,52 @@ tasks.register("downloadWespeakerModel") {
     }
 }
 
+// Download sherpa-onnx Whisper Base int8 model files from HuggingFace
+// Files: base-encoder.int8.onnx (~29 MB), base-decoder.int8.onnx (~131 MB), base-tokens.txt
+val whisperBaseDir = file("${projectDir}/models/whisper-base")
+
+tasks.register("downloadWhisperBase") {
+    doLast {
+        val hfBase = "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main"
+        val files = mapOf(
+            "base-encoder.int8.onnx" to 1_000_000L,   // ~29 MB
+            "base-decoder.int8.onnx" to 1_000_000L,   // ~131 MB
+            "base-tokens.txt"        to 0L,
+        )
+
+        val allPresent = files.keys.all { name ->
+            val f = File(whisperBaseDir, name)
+            f.length() > files[name]!!
+        }
+        if (allPresent) {
+            logger.lifecycle("Whisper Base model already present — skipping")
+            return@doLast
+        }
+
+        whisperBaseDir.mkdirs()
+        for ((name, minSize) in files) {
+            val target = File(whisperBaseDir, name)
+            if (target.length() > minSize) {
+                logger.lifecycle("  $name already present (${target.length()} bytes)")
+                continue
+            }
+            val url = "$hfBase/$name"
+            logger.lifecycle("  Downloading $name …")
+            try {
+                URI(url).toURL().openStream().use { inp ->
+                    target.outputStream().use { out -> inp.copyTo(out) }
+                }
+                logger.lifecycle("  $name ready (${target.length()} bytes)")
+            } catch (e: Exception) {
+                logger.error("  Failed to download $name: ${e.message}")
+                target.delete()
+            }
+        }
+    }
+}
+
 tasks.named("preBuild").configure {
-    dependsOn("downloadSherpaOnnxAAR", "downloadWespeakerModel")
+    dependsOn("downloadSherpaOnnxAAR", "downloadWespeakerModel", "downloadWhisperBase")
 }
 
 android {

@@ -37,13 +37,20 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
+ * MIGRATION: SpeechRecognizer → AudioRecord + Whisper (sherpa-onnx)
+ * Datum: 2026-03-09
+ * Grund: SpeechRecognizer erkennt kein TV/Lautsprecher-Audio (Nahfeld-optimiert)
+ * Lösung: AudioRecord(UNPROCESSED) + lokales Whisper Tiny Modell
+ * Rollback: Suche nach "[LEGACY SpeechRecognizer]" um alten Code wiederherzustellen
+ * Modell: Whisper Tiny multilingual (bereits in assets/models/whisper-tiny/)
+ */
+
+/**
  * Foreground service that owns the complete audio pipeline.
  *
- * ## ASR backends (auto-selected at startup)
- * - [AsrBackend.GOOGLE_SPEECH] — Android SpeechRecognizer; selected when Google recognition
- *   service is installed. Low latency, continuous, partial results.
- * - [AsrBackend.WHISPER] — On-device ONNX Whisper Tiny; fallback when Google SR is unavailable.
- *   Fully offline.
+ * ## ASR backend
+ * Always uses [AsrBackend.WHISPER] (AudioRecord + sherpa-onnx Whisper Tiny).
+ * This allows capturing TV/speaker audio that SpeechRecognizer misses (Nahfeld-only).
  *
  * ## Audio capture sources
  * The service supports two audio capture sources, selectable at recording start:
@@ -52,9 +59,6 @@ import kotlinx.coroutines.sync.withLock
  * ```
  * AudioRecord (UNPROCESSED, 16 kHz PCM float)   [Whisper mode]
  *     → RMS-based VAD → SherpaSpeakerDiarizer → SherpaOnnxAsrEngine → result
- *
- * AndroidSpeechEngine (SpeechRecognizer)          [Google Speech mode]
- *     → onResult / onPartialResult → result
  * ```
  *
  * **System audio / Media capture (Android 10+, requires MediaProjection)**
@@ -106,8 +110,8 @@ class AudioRecorderService : Service() {
     /** Current speaker ID, updated by the diarizer, read by result callbacks. */
     @Volatile private var currentSpeakerId = 0
 
-    /** Active ASR backend, determined automatically in [initializeEngines]. */
-    private var activeBackend: AsrBackend = AsrBackend.GOOGLE_SPEECH
+    // [WHISPER] Always WHISPER after migration; GOOGLE_SPEECH is legacy.
+    private var activeBackend: AsrBackend = AsrBackend.WHISPER
 
     /**
      * Optional [MediaProjection] for system audio capture (Android 10+).
@@ -158,11 +162,11 @@ class AudioRecorderService : Service() {
     }
 
     /**
-     * Auto-selects the ASR backend and initialises engines.
+     * Initialises ASR and diarizer engines.
      *
-     * Selection logic:
-     * - [AsrBackend.GOOGLE_SPEECH] when [SpeechRecognizer.isRecognitionAvailable] returns true.
-     * - [AsrBackend.WHISPER] otherwise (no Google recognition service installed).
+     * [AsrBackend.WHISPER] is always used after the SpeechRecognizer migration.
+     * AudioRecord(UNPROCESSED) + sherpa-onnx Whisper Tiny captures TV/speaker audio
+     * that the previous SpeechRecognizer (near-field only) could not recognise.
      *
      * The diarizer ([SherpaSpeakerDiarizer]) is always initialised — it is used in both
      * Whisper mode and system audio capture mode.
@@ -172,10 +176,13 @@ class AudioRecorderService : Service() {
         val repo     = SettingsRepository(this)
         val language = repo.getLanguageSync()
 
-        activeBackend = if (SpeechRecognizer.isRecognitionAvailable(this))
-            AsrBackend.GOOGLE_SPEECH
-        else
-            AsrBackend.WHISPER
+        // [WHISPER] Always use Whisper — AudioRecord(UNPROCESSED) captures TV/speaker audio
+        // that SpeechRecognizer misses (SpeechRecognizer is optimised for near-field mic only).
+        activeBackend = AsrBackend.WHISPER
+        // [LEGACY SpeechRecognizer] activeBackend = if (SpeechRecognizer.isRecognitionAvailable(this))
+        // [LEGACY SpeechRecognizer]     AsrBackend.GOOGLE_SPEECH
+        // [LEGACY SpeechRecognizer] else
+        // [LEGACY SpeechRecognizer]     AsrBackend.WHISPER
 
         try {
             diarizer = SherpaSpeakerDiarizer(this).also { it.initialize() }
@@ -183,32 +190,39 @@ class AudioRecorderService : Service() {
             Log.e(TAG, "Diarizer init failed", e)
         }
 
-        when (activeBackend) {
-            AsrBackend.WHISPER -> {
-                try {
-                    asrEngine = SherpaOnnxAsrEngine(this, language).also { it.initialize() }
-                    Log.d(TAG, "Whisper initialized (lang=$language)")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Whisper init failed", e)
-                }
-            }
-            AsrBackend.GOOGLE_SPEECH -> {
-                speechEngine = AndroidSpeechEngine(
-                    context         = this,
-                    language        = language,
-                    onResult        = { text -> onTranscriptionResult?.invoke(currentSpeakerId, text) },
-                    onPartialResult = { text -> onPartialResult?.invoke(currentSpeakerId, text) },
-                )
-                // Whisper must also be ready as fallback for system audio capture mode
-                try {
-                    asrEngine = SherpaOnnxAsrEngine(this, language).also { it.initialize() }
-                    Log.d(TAG, "Whisper also initialized for system audio capture (lang=$language)")
-                } catch (e: Exception) {
-                    Log.w(TAG, "Whisper init skipped (models not present) — system audio capture unavailable")
-                }
-                Log.d(TAG, "Google Speech Engine ready (lang=$language)")
-            }
+        // [WHISPER] Initialize Whisper Tiny ONNX engine (always active after migration)
+        try {
+            asrEngine = SherpaOnnxAsrEngine(this, language).also { it.initialize() }
+            Log.d(TAG, "Whisper initialized (lang=$language)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Whisper init failed", e)
         }
+
+        // [LEGACY SpeechRecognizer] when (activeBackend) {
+        // [LEGACY SpeechRecognizer]     AsrBackend.WHISPER -> {
+        // [LEGACY SpeechRecognizer]         try {
+        // [LEGACY SpeechRecognizer]             asrEngine = SherpaOnnxAsrEngine(this, language).also { it.initialize() }
+        // [LEGACY SpeechRecognizer]             Log.d(TAG, "Whisper initialized (lang=$language)")
+        // [LEGACY SpeechRecognizer]         } catch (e: Exception) {
+        // [LEGACY SpeechRecognizer]             Log.e(TAG, "Whisper init failed", e)
+        // [LEGACY SpeechRecognizer]         }
+        // [LEGACY SpeechRecognizer]     }
+        // [LEGACY SpeechRecognizer]     AsrBackend.GOOGLE_SPEECH -> {
+        // [LEGACY SpeechRecognizer]         speechEngine = AndroidSpeechEngine(
+        // [LEGACY SpeechRecognizer]             context         = this,
+        // [LEGACY SpeechRecognizer]             language        = language,
+        // [LEGACY SpeechRecognizer]             onResult        = { text -> onTranscriptionResult?.invoke(currentSpeakerId, text) },
+        // [LEGACY SpeechRecognizer]             onPartialResult = { text -> onPartialResult?.invoke(currentSpeakerId, text) },
+        // [LEGACY SpeechRecognizer]         )
+        // [LEGACY SpeechRecognizer]         try {
+        // [LEGACY SpeechRecognizer]             asrEngine = SherpaOnnxAsrEngine(this, language).also { it.initialize() }
+        // [LEGACY SpeechRecognizer]             Log.d(TAG, "Whisper also initialized for system audio capture (lang=$language)")
+        // [LEGACY SpeechRecognizer]         } catch (e: Exception) {
+        // [LEGACY SpeechRecognizer]             Log.w(TAG, "Whisper init skipped (models not present) — system audio capture unavailable")
+        // [LEGACY SpeechRecognizer]         }
+        // [LEGACY SpeechRecognizer]         Log.d(TAG, "Google Speech Engine ready (lang=$language)")
+        // [LEGACY SpeechRecognizer]     }
+        // [LEGACY SpeechRecognizer] }
     }
 
     /**
@@ -262,14 +276,10 @@ class AudioRecorderService : Service() {
      * from the device output (e.g. a playing video) without using the microphone.
      * Whisper is used for transcription.
      *
-     * **Whisper mode** (mic, [AsrBackend.WHISPER]):
+     * **[WHISPER] Microphone mode** (mic, [AsrBackend.WHISPER]):
      * Opens [AudioRecord] with [MediaRecorder.AudioSource.UNPROCESSED] — raw mic audio
      * with no echo cancellation or noise suppression, matching Live Transcribe's approach.
      * No NoiseSuppressor or AutomaticGainControl is attached.
-     *
-     * **Google Speech mode** (mic, [AsrBackend.GOOGLE_SPEECH]):
-     * Delegates to [AndroidSpeechEngine]; the SpeechRecognizer manages the mic internally.
-     * No separate [AudioRecord] is created.
      *
      * No-op if already recording.
      */
@@ -339,15 +349,14 @@ class AudioRecorderService : Service() {
     }
 
     /**
-     * Starts microphone capture.
+     * Starts microphone capture using AudioRecord + Whisper.
      *
-     * Uses [MediaRecorder.AudioSource.UNPROCESSED] (API 24+) which provides raw audio
-     * without echo cancellation, noise suppression, or automatic gain control.
-     * This mirrors how Google Live Transcribe captures audio and allows picking up
-     * speech from device speakers (e.g. videos) as well as ambient speech.
+     * [WHISPER] Uses [MediaRecorder.AudioSource.UNPROCESSED] (API 24+) — raw audio without
+     * echo cancellation, noise suppression, or AGC. This is the key difference vs.
+     * SpeechRecognizer: UNPROCESSED does not treat loudspeaker output as "noise", so
+     * TV audio and room speakers are picked up correctly.
      *
-     * Falls back to [MediaRecorder.AudioSource.MIC] on devices that do not support
-     * UNPROCESSED (very rare).
+     * Falls back to [MediaRecorder.AudioSource.MIC] on devices that do not support UNPROCESSED.
      */
     private fun startMicCapture() {
         when (activeBackend) {
@@ -397,12 +406,16 @@ class AudioRecorderService : Service() {
                 recordingJob = serviceScope.launch { processAudioLoop() }
                 Log.d(TAG, "Recording started — Whisper mode (mic, UNPROCESSED, no effects)")
             }
-            AsrBackend.GOOGLE_SPEECH -> {
-                // SpeechRecognizer manages its own mic; no separate AudioRecord.
-                // All results assigned to speaker 0 (no diarization in SR mode).
-                currentSpeakerId = 0
-                speechEngine?.start()
-                Log.d(TAG, "Recording started — Google Speech mode")
+            // [LEGACY SpeechRecognizer] AsrBackend.GOOGLE_SPEECH -> {
+            // [LEGACY SpeechRecognizer]     // SpeechRecognizer manages its own mic; no separate AudioRecord.
+            // [LEGACY SpeechRecognizer]     // All results assigned to speaker 0 (no diarization in SR mode).
+            // [LEGACY SpeechRecognizer]     currentSpeakerId = 0
+            // [LEGACY SpeechRecognizer]     speechEngine?.start()
+            // [LEGACY SpeechRecognizer]     Log.d(TAG, "Recording started — Google Speech mode")
+            // [LEGACY SpeechRecognizer] }
+            else -> {
+                // No-op: should never be reached after migration (activeBackend is always WHISPER)
+                Log.w(TAG, "startMicCapture: unexpected backend=$activeBackend, ignoring")
             }
         }
     }
@@ -453,27 +466,38 @@ class AudioRecorderService : Service() {
      * - Segments are only sent to Whisper if they contain ≥ [MIN_VOICE_FRAMES] speech frames.
      *
      * **Tuning:**
-     * - Raise thresholds (0.005 / 0.002) to reduce false triggers from background noise.
+     * - Raise thresholds (voiceThreshold / silenceThreshold) to reduce false triggers from background noise.
      * - Lower thresholds to detect quieter sources (device speakers, far-field audio).
+     * - Raise [MIN_VOICE_FRAMES] to require more confirmed speech before sending to Whisper.
      */
     private suspend fun processAudioLoop() {
         val buffer      = FloatArray(CHUNK_SIZE_SAMPLES)
         val accumulator = mutableListOf<Float>()
 
-        val voiceThreshold   = 0.0005f
-        val silenceThreshold = 0.0002f
+        // Thresholds calibrated from live RMS measurements on this device:
+        // background noise ≈ 0.0001–0.0003, speech ≈ 0.0004–0.0008.
+        val voiceThreshold   = 0.0004f
+        val silenceThreshold = 0.00015f
         var silenceFrames    = 0
         var voiceFrames      = 0
-        val maxSilenceFrames = 8   // 8 × 100 ms = 800 ms of silence ends a segment
+        // 15 × 100 ms = 1.5 s of silence ends a segment.
+        // Longer pause tolerance lets full sentences complete before Whisper inference —
+        // mid-sentence cuts were the main cause of wrong words.
+        val maxSilenceFrames = 15
 
+        var debugFrameCount = 0
         while (currentCoroutineContext().isActive && isRecording) {
             val read = audioRecord?.read(buffer, 0, CHUNK_SIZE_SAMPLES, AudioRecord.READ_BLOCKING) ?: break
-            if (read <= 0) continue
+            if (read <= 0) { Log.w(TAG, "audioRecord.read returned $read"); continue }
 
             val chunk = buffer.take(read)
             accumulator.addAll(chunk)
 
             val rms = chunk.map { it * it }.average().let { kotlin.math.sqrt(it).toFloat() }
+            // Log every 10 frames (= every 1 second) so we can see live audio levels
+            if (++debugFrameCount % 10 == 0) {
+                Log.d(TAG, "VAD rms=%.5f voiceFrames=$voiceFrames silenceFrames=$silenceFrames accum=${accumulator.size}".format(rms))
+            }
             when {
                 rms >= voiceThreshold  -> { voiceFrames++; silenceFrames = 0 }
                 rms < silenceThreshold -> silenceFrames++
@@ -566,8 +590,10 @@ class AudioRecorderService : Service() {
         const val SAMPLE_RATE             = 16000
         private const val CHUNK_SIZE_SAMPLES            = 1600      // 100 ms per chunk
         private const val CHUNK_SIZE_BYTES              = CHUNK_SIZE_SAMPLES * 4
-        private const val MAX_ACCUMULATOR_SAMPLES       = SAMPLE_RATE * 2   // 2 s max segment
-        private const val MIN_SAMPLES_FOR_TRANSCRIPTION = SAMPLE_RATE / 2   // 0.5 s minimum
-        private const val MIN_VOICE_FRAMES              = 1          // 1 × 100 ms speech required
+        // 6 s max segment — Whisper was trained on 30 s chunks; longer segments give it
+        // more acoustic context and significantly reduce word-error rate.
+        private const val MAX_ACCUMULATOR_SAMPLES       = SAMPLE_RATE * 6
+        private const val MIN_SAMPLES_FOR_TRANSCRIPTION = SAMPLE_RATE * 3 / 4 // 0.75 s minimum
+        private const val MIN_VOICE_FRAMES              = 1          // 1 × 100 ms = 100 ms real speech required (Whisper filters noise itself)
     }
 }

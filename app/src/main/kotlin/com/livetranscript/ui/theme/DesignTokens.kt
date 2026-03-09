@@ -214,10 +214,10 @@ object AppTheme {
         //       modifier = Modifier.weight(1f).height(fabHeight) verwenden.
         val fabWidth: Dp    = 150.dp  // ← Breite des Aufnahme-Buttons
         val fabHeight: Dp   = 64.dp   // ← Höhe des Aufnahme-Buttons
-        val fabIconSize: Dp = 28.dp   // ← Icon-Größe
+        val fabIconSize: Dp = 38.dp   // ← Icon-Größe
 
         // ── Löschen-Button ─────────────────────────────────────────────────────
-        val deleteButtonWidth: Dp  = 100.dp  // ← Breite des Löschen-Buttons
+        val deleteButtonWidth: Dp  = 120.dp  // ← Breite des Löschen-Buttons
         val deleteButtonHeight: Dp = 64.dp   // ← Höhe des Löschen-Buttons
 
         // ── Speichern-Button (neben Sprachauswahl) ─────────────────────────────
