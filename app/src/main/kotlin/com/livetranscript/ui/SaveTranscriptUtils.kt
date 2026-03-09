@@ -6,6 +6,16 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Supported transcript export formats.
+ *
+ * - [TXT]  — Plain text, one line per entry: `[Speaker 1] Hello`
+ * - [CSV]  — Timestamp, speaker, text (RFC 4180-compatible, UTF-8)
+ * - [JSON] — Array of `{timestamp, speaker, text}` objects
+ * - [SRT]  — SubRip subtitle format; each entry gets a 3-second window
+ *
+ * The [ext] property is appended to the auto-generated filename.
+ */
 enum class SaveFormat(val ext: String) {
     TXT("txt"),
     CSV("csv"),
@@ -16,12 +26,14 @@ enum class SaveFormat(val ext: String) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Format converters
 
+/** Converts [entries] to a plain-text string, one `[Speaker N] text` line per entry. */
 fun transcriptToText(entries: List<TranscriptEntry>): String =
     entries.joinToString("\n") { e ->
         val label = if (e.speakerId >= 0) "Speaker ${e.speakerId + 1}" else "Unknown"
         "[$label] ${e.text}"
     }
 
+/** Converts [entries] to CSV with columns: Timestamp, Speaker, Text. Text values are quoted and escaped. */
 fun transcriptToCsv(entries: List<TranscriptEntry>): String {
     val fmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     return buildString {
@@ -35,6 +47,7 @@ fun transcriptToCsv(entries: List<TranscriptEntry>): String {
     }
 }
 
+/** Converts [entries] to a JSON array: `[{"timestamp":…,"speaker":…,"text":"…"},…]` */
 fun transcriptToJson(entries: List<TranscriptEntry>): String {
     val items = entries.joinToString(",\n  ") { e ->
         val sp = if (e.speakerId >= 0) e.speakerId + 1 else -1
@@ -43,6 +56,10 @@ fun transcriptToJson(entries: List<TranscriptEntry>): String {
     return "[\n  $items\n]"
 }
 
+/**
+ * Converts [entries] to SubRip (.srt) subtitle format.
+ * Timestamps are relative to the first entry; each entry gets a 3-second display window.
+ */
 fun transcriptToSrt(entries: List<TranscriptEntry>): String {
     val first = entries.firstOrNull()?.timestamp ?: 0L
     return buildString {
@@ -61,6 +78,11 @@ fun transcriptToSrt(entries: List<TranscriptEntry>): String {
 // ─────────────────────────────────────────────────────────────────────────────
 // Share via Android share-sheet
 
+/**
+ * Formats [entries] according to [format] and opens the Android share-sheet via
+ * [Intent.ACTION_SEND]. The content is passed as `EXTRA_TEXT` (no FileProvider needed).
+ * The suggested filename (`transcript_YYYYMMDD_HHmmss.ext`) appears in apps that support it.
+ */
 fun shareTranscript(context: Context, entries: List<TranscriptEntry>, format: SaveFormat) {
     val content = when (format) {
         SaveFormat.TXT  -> transcriptToText(entries)

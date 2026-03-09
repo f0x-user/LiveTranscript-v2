@@ -44,8 +44,60 @@ tasks.register("downloadSherpaOnnxAAR") {
     }
 }
 
+// Download sherpa-onnx compatible WeSpeaker model (ONNX IR ≤ 9, direct .onnx file)
+// Release tag has intentional typo "recongition" — that is the actual GitHub tag name.
+val wespeakerModel = file("${projectDir}/models/wespeaker/model.onnx")
+// Known bad model size (IR v10, incompatible with bundled ORT): 26535549 bytes
+val incompatibleModelSize = 26_535_549L
+
+tasks.register("downloadWespeakerModel") {
+    doLast {
+        val alreadyOk = wespeakerModel.exists()
+            && wespeakerModel.length() > 1_000_000L
+            && wespeakerModel.length() != incompatibleModelSize
+        if (alreadyOk) {
+            logger.lifecycle("WeSpeaker model already present (${wespeakerModel.length()} bytes) — skipping")
+            return@doLast
+        }
+        if (wespeakerModel.exists()) {
+            logger.lifecycle("Replacing incompatible WeSpeaker model (${wespeakerModel.length()} bytes)…")
+            wespeakerModel.delete()
+        }
+
+        // Direct .onnx download — no archive extraction needed.
+        // ResNet34-LM: fine-tuned for better speaker discrimination on short segments.
+        val urls = listOf(
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
+                "speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx",
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
+                "speaker-recongition-models/wespeaker_en_voxceleb_resnet34.onnx"
+        )
+        wespeakerModel.parentFile.mkdirs()
+        var downloaded = false
+        for (url in urls) {
+            try {
+                logger.lifecycle("Downloading WeSpeaker model from: $url")
+                URI(url).toURL().openStream().use { inp ->
+                    wespeakerModel.outputStream().use { out -> inp.copyTo(out) }
+                }
+                if (wespeakerModel.length() > 1_000_000L) {
+                    logger.lifecycle("WeSpeaker model ready: ${wespeakerModel.length()} bytes")
+                    downloaded = true
+                    break
+                }
+            } catch (e: Exception) {
+                logger.warn("Failed to download from $url: ${e.message}")
+                wespeakerModel.delete()
+            }
+        }
+        if (!downloaded) {
+            logger.error("Could not download WeSpeaker model — diarization will be unavailable.")
+        }
+    }
+}
+
 tasks.named("preBuild").configure {
-    dependsOn("downloadSherpaOnnxAAR")
+    dependsOn("downloadSherpaOnnxAAR", "downloadWespeakerModel")
 }
 
 android {
@@ -67,6 +119,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // x86_64 for emulator support (arm64-v8a from defaultConfig is still included)
+            ndk {
+                abiFilters += "x86_64"
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -102,6 +160,11 @@ android {
         getByName("main") {
             assets.srcDirs("src/main/assets", "models")
         }
+    }
+
+    // ONNX-Modelle nicht komprimieren — openFd() funktioniert nur auf unkomprimierten Assets
+    androidResources {
+        noCompress += listOf("onnx", "bin", "tflite")
     }
 }
 

@@ -106,7 +106,7 @@ object AppTheme {
         recordingLabel = Color(0xFFEF9A9A),
 
         textPrimary   = Color.White,
-        textSecondary = Color(0xFFB0BEC5),
+        textSecondary = Color(0xFFCFD8DC),  // heller als vorher (war 0xFFB0BEC5)
 
         chipBorder   = Color(0x33FFFFFF),
         chipSelected = Color(0xFF1565C0),
@@ -203,17 +203,60 @@ object AppTheme {
     }
 
     // ── Dimensions ────────────────────────────────────────────────────────────
+    //
+    //  ALLE BUTTON-GRÖSSEN HIER ZENTRAL ANPASSEN.
+    //  Änderungen wirken sich automatisch auf die gesamte UI aus.
+    //
     object Dimens {
-        // Record FAB — the visual anchor
-        val fabSize: Dp         = 76.dp
-        val fabIconSize: Dp     = 34.dp
 
-        // Pulse rings
-        val pulseRingInner: Dp    = 96.dp
-        val pulseRingFactor: Float = 1.9f
+        // ── Aufnahme-Button ────────────────────────────────────────────────────
+        // Tipp: Für volle verfügbare Breite statt fester Breite in LiveScreen.kt
+        //       modifier = Modifier.weight(1f).height(fabHeight) verwenden.
+        val fabWidth: Dp    = 150.dp  // ← Breite des Aufnahme-Buttons
+        val fabHeight: Dp   = 64.dp   // ← Höhe des Aufnahme-Buttons
+        val fabIconSize: Dp = 28.dp   // ← Icon-Größe
+
+        // ── Löschen-Button ─────────────────────────────────────────────────────
+        val deleteButtonWidth: Dp  = 100.dp  // ← Breite des Löschen-Buttons
+        val deleteButtonHeight: Dp = 64.dp   // ← Höhe des Löschen-Buttons
+
+        // ── Speichern-Button (neben Sprachauswahl) ─────────────────────────────
+        val saveButtonWidth: Dp  = 80.dp   // ← Breite des Speichern-Buttons
+        val saveButtonHeight: Dp = 56.dp   // ← Höhe des Speichern-Buttons
+
+        // ── [1] Top-App-Bar ────────────────────────────────────────────────────
+        val topBarHeight: Dp = 64.dp           // ← Höhe der oberen Leiste
+
+        // ── [2] Sprachauswahl-Zeile ────────────────────────────────────────────
+        val langRowPaddingH: Dp      = 50.dp   // ← Außenabstand links/rechts
+        val langRowPaddingTop: Dp    = 20.dp    // ← Außenabstand oben
+        val langRowPaddingBottom: Dp = 8.dp    // ← Außenabstand unten
+        val dropdownSaveSpacing: Dp = 48.dp    // ← Abstand Dropdown ↔ Speichern-Button
+
+        // ── [3] Transkript-Karte ───────────────────────────────────────────────
+        val transcriptCardPaddingH: Dp      = 16.dp  // ← Außenabstand links/rechts
+        val transcriptCardPaddingTop: Dp    = 4.dp   // ← Außenabstand oben
+        val transcriptCardPaddingBottom: Dp = 4.dp   // ← Außenabstand unten
+        val transcriptCardInnerTop: Dp     = 12.dp  // ← Innenabstand oben
+        val transcriptCardInnerBottom: Dp  = 4.dp   // ← Innenabstand unten
+        val transcriptListPaddingH: Dp     = 12.dp  // ← Listeneinrückung links/rechts
+        val transcriptListItemSpacing: Dp  = 10.dp  // ← Abstand zwischen Einträgen
+
+        // ── [4] Untere Button-Reihe ────────────────────────────────────────────
+        val bottomRowPaddingH: Dp      = 56.dp  // ← Außenabstand links/rechts
+        val bottomRowPaddingTop: Dp    = 8.dp  // ← Außenabstand oben
+        val bottomRowPaddingBottom: Dp = 58.dp  // ← Außenabstand unten
+        val bottomRowSpacing: Dp  = 80.dp      // ← Abstand Aufnahme ↔ Löschen-Button
+
+        // Subtle scale pulse (1.0 → pulseFabScale when recording)
+        val pulseFabScale: Float = 1.04f
 
         // Speaker dot in transcript bubble
         val speakerDot: Dp = 6.dp
+
+        // Transcript bubble
+        val bubblePaddingH: Dp = 14.dp
+        val bubblePaddingV: Dp = 10.dp
 
         // Animated waveform
         val waveformHeight: Dp   = 48.dp
@@ -229,16 +272,16 @@ object AppTheme {
 
     // ── Shapes ────────────────────────────────────────────────────────────────
     object Shapes {
-        val card   = RoundedCornerShape(22.dp)
-        val button = RoundedCornerShape(18.dp)
-        val pill   = RoundedCornerShape(50)
+        val card     = RoundedCornerShape(22.dp)
+        val button   = RoundedCornerShape(18.dp)
+        val dropdown = RoundedCornerShape(16.dp)
 
         /** Transcript bubble: sharp top-left, rounded elsewhere. */
         val bubble = RoundedCornerShape(
             topStart    = 4.dp,
-            topEnd      = 14.dp,
-            bottomEnd   = 14.dp,
-            bottomStart = 14.dp,
+            topEnd      = 16.dp,
+            bottomEnd   = 16.dp,
+            bottomStart = 16.dp,
         )
     }
 

@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:k2-fsa.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:wenet-e2e.github.io)",
+      "Bash(powershell.exe:*)",
+      "Bash(./gradlew assembleDebug:*)",
+      "Bash(./gradlew installDebug:*)",
+      "Bash(adb shell:*)",
+      "Bash(adb devices:*)",
+      "Bash(where adb)",
+      "Read(//c/Users/nino/**)",
+      "Bash($ADB devices:*)",
+      "Bash(ADB=\"/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe\")",
+      "Bash($ADB shell getprop ro.build.version.release)",
+      "Bash($ADB shell getprop ro.build.version.sdk)",
+      "Bash($ADB shell pm list packages)",
+      "Bash(\"/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe\" shell:*)",
+      "Bash(\"/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe\" pull:*)",
+      "Bash(./gradlew compileDebugKotlin:*)",
+      "Bash(\"$ADB\" logcat:*)",
+      "Bash(\"$ADB\":*)",
+      "Bash(\"/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe\" logcat:*)",
+      "Bash(\"$ADB\" install:*)",
+      "Bash(\"/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe\":*)",
+      "Bash(adb logcat:*)",
+      "Bash(\"/c/Users/nino/AppData/Local/Android/Sdk/platform-tools/adb.exe\" install:*)"
+    ]
+  }
+}

@@ -1,31 +1,49 @@
 package com.livetranscript.ui
 
 import androidx.compose.runtime.compositionLocalOf
+import com.livetranscript.ui.language.ArabicStrings
+import com.livetranscript.ui.language.ChineseStrings
+import com.livetranscript.ui.language.DutchStrings
+import com.livetranscript.ui.language.EnglishStrings
+import com.livetranscript.ui.language.FrenchStrings
+import com.livetranscript.ui.language.GermanStrings
+import com.livetranscript.ui.language.ItalianStrings
+import com.livetranscript.ui.language.JapaneseStrings
+import com.livetranscript.ui.language.KoreanStrings
+import com.livetranscript.ui.language.PolishStrings
+import com.livetranscript.ui.language.PortugueseStrings
+import com.livetranscript.ui.language.RussianStrings
+import com.livetranscript.ui.language.SpanishStrings
+import com.livetranscript.ui.language.TurkishStrings
 import java.util.Locale
 
 /**
- * All user-visible strings in one place.
- * Add a new language block below and wire it up in [stringsForLanguage].
+ * Alle sichtbaren Strings der App in einem typsicheren Halter.
+ *
+ * Jede Sprache hat eine eigene Datei unter ui/language/Strings_XX.kt.
+ * Neue Sprache hinzufügen:
+ *   1. Neue Datei ui/language/Strings_XX.kt anlegen
+ *   2. Import und when-Branch in stringsForLanguage() ergänzen
  */
 data class AppStrings(
     // App bar
     val appTitle: String,
-    // Recording states
+    // Aufnahmestatus
     val recordingRunning: String,
     val ready: String,
     val modelsLoading: String,
     val liveTranscriptionRunning: String,
     val startToBegin: String,
-    // Buttons / actions
+    // Buttons / Aktionen
     val startRecording: String,
     val stopRecording: String,
     val deleteAll: String,
     val save: String,
     val cancel: String,
-    // Transcript
+    // Transkript
     val speaker: String,
     val unknown: String,
-    // Settings
+    // Einstellungen
     val settings: String,
     val settingsTitle: String,
     val appearance: String,
@@ -38,7 +56,7 @@ data class AppStrings(
     val showTimestamps: String,
     val showTimestampsDesc: String,
     val info: String,
-    // Save dialog
+    // Speichern-Dialog
     val saveTranscript: String,
     val selectFormat: String,
     val formatTxt: String,
@@ -49,216 +67,37 @@ data class AppStrings(
     val formatJsonDesc: String,
     val formatSrt: String,
     val formatSrtDesc: String,
-    // Language picker
+    // Sprachauswahl
     val selectLanguage: String,
     val autoDetect: String,
-    // ASR backend
-    val asrBackend: String,
-    val asrGoogle: String,
-    val asrGoogleDesc: String,
-    val asrWhisper: String,
-    val asrWhisperDesc: String,
-    // Info cards
+    // Info-Karten
     val summary: String,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-val GermanStrings = AppStrings(
-    appTitle                = "Live-Transkript",
-    recordingRunning        = "Aufnahme läuft…",
-    ready                   = "Bereit",
-    modelsLoading           = "Modelle werden geladen…",
-    liveTranscriptionRunning = "Live-Transkription läuft…",
-    startToBegin            = "Aufnahme starten, um zu beginnen",
-    startRecording          = "Aufnahme starten",
-    stopRecording           = "Aufnahme stoppen",
-    deleteAll               = "Löschen",
-    save                    = "Speichern",
-    cancel                  = "Abbrechen",
-    speaker                 = "Sprecher",
-    unknown                 = "Unbekannt",
-    settings                = "Einstellungen",
-    settingsTitle           = "Einstellungen",
-    appearance              = "Erscheinungsbild",
-    themeLight              = "Hell",
-    themeDark               = "Dunkel",
-    themeSystem             = "System (automatisch)",
-    transcript              = "Transkript",
-    autoScroll              = "Automatisch scrollen",
-    autoScrollDesc          = "Scrollt automatisch zum neuesten Eintrag",
-    showTimestamps          = "Zeitstempel anzeigen",
-    showTimestampsDesc      = "Zeigt die Uhrzeit neben jedem Eintrag",
-    info                    = "Info",
-    saveTranscript          = "Transkript speichern",
-    selectFormat            = "Format auswählen",
-    formatTxt               = "Nur Text (.txt)",
-    formatTxtDesc           = "Einfaches Textformat",
-    formatCsv               = "Tabelle (.csv)",
-    formatCsvDesc           = "Für Excel, Sheets & Co.",
-    formatJson              = "JSON (.json)",
-    formatJsonDesc          = "Strukturiertes Datenformat",
-    formatSrt               = "Untertitel (.srt)",
-    formatSrtDesc           = "Für Videountertitel",
-    selectLanguage          = "Sprache wählen",
-    autoDetect              = "Automatisch",
-    asrBackend              = "Spracherkennung",
-    asrGoogle               = "Google (empfohlen)",
-    asrGoogleDesc           = "Schnell, hohe Genauigkeit, nutzt Android-Sprachpakete",
-    asrWhisper              = "Whisper (offline)",
-    asrWhisperDesc          = "Vollständig offline, nutzt eingebettetes KI-Modell",
-    summary                 = "Zusammenfassung",
-)
-
-val EnglishStrings = AppStrings(
-    appTitle                = "Live Transcript",
-    recordingRunning        = "Recording…",
-    ready                   = "Ready",
-    modelsLoading           = "Loading models…",
-    liveTranscriptionRunning = "Live transcription running…",
-    startToBegin            = "Start recording to begin",
-    startRecording          = "Start recording",
-    stopRecording           = "Stop recording",
-    deleteAll               = "Clear",
-    save                    = "Save",
-    cancel                  = "Cancel",
-    speaker                 = "Speaker",
-    unknown                 = "Unknown",
-    settings                = "Settings",
-    settingsTitle           = "Settings",
-    appearance              = "Appearance",
-    themeLight              = "Light",
-    themeDark               = "Dark",
-    themeSystem             = "System (automatic)",
-    transcript              = "Transcript",
-    autoScroll              = "Auto-scroll",
-    autoScrollDesc          = "Automatically scroll to the latest entry",
-    showTimestamps          = "Show timestamps",
-    showTimestampsDesc      = "Display the time next to each entry",
-    info                    = "Info",
-    saveTranscript          = "Save transcript",
-    selectFormat            = "Select format",
-    formatTxt               = "Plain text (.txt)",
-    formatTxtDesc           = "Simple text format",
-    formatCsv               = "Spreadsheet (.csv)",
-    formatCsvDesc           = "For Excel, Sheets etc.",
-    formatJson              = "JSON (.json)",
-    formatJsonDesc          = "Structured data format",
-    formatSrt               = "Subtitles (.srt)",
-    formatSrtDesc           = "For video subtitles",
-    selectLanguage          = "Select language",
-    autoDetect              = "Auto-detect",
-    asrBackend              = "Speech recognition",
-    asrGoogle               = "Google (recommended)",
-    asrGoogleDesc           = "Fast, high accuracy, uses Android language packs",
-    asrWhisper              = "Whisper (offline)",
-    asrWhisperDesc          = "Fully offline, uses embedded AI model",
-    summary                 = "Summary",
-)
-
-val FrenchStrings = AppStrings(
-    appTitle                = "Transcription live",
-    recordingRunning        = "Enregistrement en cours…",
-    ready                   = "Prêt",
-    modelsLoading           = "Chargement des modèles…",
-    liveTranscriptionRunning = "Transcription en direct…",
-    startToBegin            = "Démarrez pour commencer",
-    startRecording          = "Démarrer",
-    stopRecording           = "Arrêter",
-    deleteAll               = "Effacer",
-    save                    = "Enregistrer",
-    cancel                  = "Annuler",
-    speaker                 = "Intervenant",
-    unknown                 = "Inconnu",
-    settings                = "Paramètres",
-    settingsTitle           = "Paramètres",
-    appearance              = "Apparence",
-    themeLight              = "Clair",
-    themeDark               = "Sombre",
-    themeSystem             = "Système (automatique)",
-    transcript              = "Transcription",
-    autoScroll              = "Défilement automatique",
-    autoScrollDesc          = "Fait défiler jusqu'au dernier message",
-    showTimestamps          = "Afficher l'heure",
-    showTimestampsDesc      = "Affiche l'heure à côté de chaque entrée",
-    info                    = "Infos",
-    saveTranscript          = "Enregistrer la transcription",
-    selectFormat            = "Choisir le format",
-    formatTxt               = "Texte brut (.txt)",
-    formatTxtDesc           = "Format texte simple",
-    formatCsv               = "Tableau (.csv)",
-    formatCsvDesc           = "Pour Excel, Sheets etc.",
-    formatJson              = "JSON (.json)",
-    formatJsonDesc          = "Format de données structuré",
-    formatSrt               = "Sous-titres (.srt)",
-    formatSrtDesc           = "Pour les sous-titres vidéo",
-    selectLanguage          = "Choisir la langue",
-    autoDetect              = "Automatique",
-    asrBackend              = "Reconnaissance vocale",
-    asrGoogle               = "Google (recommandé)",
-    asrGoogleDesc           = "Rapide et précis, utilise les paquets de langue Android",
-    asrWhisper              = "Whisper (hors ligne)",
-    asrWhisperDesc          = "Entièrement hors ligne, utilise un modèle IA intégré",
-    summary                 = "Résumé",
-)
-
-val SpanishStrings = AppStrings(
-    appTitle                = "Transcripción en vivo",
-    recordingRunning        = "Grabación en curso…",
-    ready                   = "Listo",
-    modelsLoading           = "Cargando modelos…",
-    liveTranscriptionRunning = "Transcripción en vivo…",
-    startToBegin            = "Iniciar para comenzar",
-    startRecording          = "Iniciar",
-    stopRecording           = "Detener",
-    deleteAll               = "Eliminar",
-    save                    = "Guardar",
-    cancel                  = "Cancelar",
-    speaker                 = "Hablante",
-    unknown                 = "Desconocido",
-    settings                = "Ajustes",
-    settingsTitle           = "Ajustes",
-    appearance              = "Apariencia",
-    themeLight              = "Claro",
-    themeDark               = "Oscuro",
-    themeSystem             = "Sistema (automático)",
-    transcript              = "Transcripción",
-    autoScroll              = "Desplazamiento automático",
-    autoScrollDesc          = "Se desplaza hasta la última entrada",
-    showTimestamps          = "Mostrar marcas de tiempo",
-    showTimestampsDesc      = "Muestra la hora junto a cada entrada",
-    info                    = "Información",
-    saveTranscript          = "Guardar transcripción",
-    selectFormat            = "Seleccionar formato",
-    formatTxt               = "Texto plano (.txt)",
-    formatTxtDesc           = "Formato de texto simple",
-    formatCsv               = "Tabla (.csv)",
-    formatCsvDesc           = "Para Excel, Sheets etc.",
-    formatJson              = "JSON (.json)",
-    formatJsonDesc          = "Formato de datos estructurado",
-    formatSrt               = "Subtítulos (.srt)",
-    formatSrtDesc           = "Para subtítulos de vídeo",
-    selectLanguage          = "Seleccionar idioma",
-    autoDetect              = "Automático",
-    asrBackend              = "Reconocimiento de voz",
-    asrGoogle               = "Google (recomendado)",
-    asrGoogleDesc           = "Rápido y preciso, usa paquetes de idioma de Android",
-    asrWhisper              = "Whisper (sin conexión)",
-    asrWhisperDesc          = "Totalmente sin conexión, usa modelo IA integrado",
-    summary                 = "Resumen",
-)
-
 /**
- * Returns the appropriate [AppStrings] for the given Whisper language code.
- * Empty string ("") = Auto — uses the Android device's default locale.
+ * Gibt die passenden [AppStrings] für den gewählten Whisper-Sprachcode zurück.
+ * Leerer String ("") = Auto → Gerätesprache wird verwendet.
  */
 fun stringsForLanguage(languageCode: String): AppStrings = when (languageCode) {
+    "de" -> GermanStrings
     "en" -> EnglishStrings
     "fr" -> FrenchStrings
     "es" -> SpanishStrings
-    ""   -> stringsForLanguage(Locale.getDefault().language)   // Auto → device locale
-    else -> GermanStrings   // covers "de" and all other Whisper codes
+    "it" -> ItalianStrings
+    "pt" -> PortugueseStrings
+    "tr" -> TurkishStrings
+    "nl" -> DutchStrings
+    "pl" -> PolishStrings
+    "ru" -> RussianStrings
+    "zh" -> ChineseStrings
+    "ja" -> JapaneseStrings
+    "ko" -> KoreanStrings
+    "ar" -> ArabicStrings
+    ""   -> stringsForLanguage(Locale.getDefault().language)  // Auto → Gerätesprache
+    else -> GermanStrings  // Fallback
 }
 
-/** CompositionLocal that provides [AppStrings] to the entire composition tree. */
+/** CompositionLocal, das [AppStrings] der gesamten Composition bereitstellt. */
 val LocalStrings = compositionLocalOf<AppStrings> { GermanStrings }

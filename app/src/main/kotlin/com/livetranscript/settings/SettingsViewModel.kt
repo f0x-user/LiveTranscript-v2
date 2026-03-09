@@ -10,14 +10,33 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/**
+ * Immutable snapshot of all user-configurable settings, exposed to the UI.
+ * Defaults match the DataStore defaults defined in [SettingsRepository].
+ *
+ * Note: ASR backend selection is NOT part of user settings. It is determined
+ * automatically at service start time by checking [SpeechRecognizer.isRecognitionAvailable].
+ */
 data class SettingsUiState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val autoScroll: Boolean = true,
     val showTimestamps: Boolean = false,
     val transcriptionLanguage: String = "de",
-    val asrBackend: AsrBackend = AsrBackend.GOOGLE_SPEECH,
 )
 
+/**
+ * ViewModel that exposes [SettingsUiState] as a [StateFlow] and provides action
+ * functions that write to [SettingsRepository].
+ *
+ * Uses manual DI via [Factory] — no Hilt or Koin.
+ *
+ * The [uiState] flow is started eagerly ([SharingStarted.Eagerly]) so the initial
+ * value is available synchronously when the composable first reads it, avoiding a
+ * flicker from the default state.
+ *
+ * Action functions ([setTheme], [setAutoScroll], etc.) launch coroutines on
+ * [viewModelScope]; they return immediately and persist the change in the background.
+ */
 class SettingsViewModel(
     private val repository: SettingsRepository,
 ) : ViewModel() {
@@ -27,14 +46,12 @@ class SettingsViewModel(
         repository.autoScroll,
         repository.showTimestamps,
         repository.transcriptionLanguage,
-        repository.asrBackend,
-    ) { theme, scroll, timestamps, language, backend ->
+    ) { theme, scroll, timestamps, language ->
         SettingsUiState(
             themeMode             = theme,
             autoScroll            = scroll,
             showTimestamps        = timestamps,
             transcriptionLanguage = language,
-            asrBackend            = backend,
         )
     }.stateIn(
         scope        = viewModelScope,
@@ -46,7 +63,6 @@ class SettingsViewModel(
     fun setAutoScroll(enabled: Boolean)     = viewModelScope.launch { repository.setAutoScroll(enabled) }
     fun setShowTimestamps(enabled: Boolean) = viewModelScope.launch { repository.setShowTimestamps(enabled) }
     fun setLanguage(code: String)           = viewModelScope.launch { repository.setTranscriptionLanguage(code) }
-    fun setAsrBackend(backend: AsrBackend)  = viewModelScope.launch { repository.setAsrBackend(backend) }
 
     class Factory(private val context: Context) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

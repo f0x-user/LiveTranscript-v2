@@ -6,6 +6,22 @@ import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractor
 import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractorConfig
 import com.livetranscript.models.ModelAssetManager
 
+/**
+ * Speaker diarization engine powered by the WeSpeaker embedding model via sherpa-onnx.
+ *
+ * How it works:
+ * 1. Extracts a speaker embedding (d-vector) from the audio segment.
+ * 2. Compares the embedding against all known speakers using cosine similarity.
+ * 3. If the best match exceeds [SIMILARITY_THRESHOLD], assigns the existing speaker ID.
+ * 4. Otherwise registers a new speaker and assigns the next available ID.
+ * 5. Known speaker embeddings are updated via a running average (capped at
+ *    [MAX_EMBEDDING_SAMPLES] samples) to adapt to changing voice conditions.
+ *
+ * Speaker IDs are 0-based integers that persist for the lifetime of this instance.
+ * Call [reset] to start a new conversation (all speakers are forgotten).
+ *
+ * @param context Android context used to locate the WeSpeaker model file.
+ */
 class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
 
     private var extractor: SpeakerEmbeddingExtractor? = null
@@ -20,6 +36,10 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
     // Fallback-Sprecher für zu kurze Segmente — Instanzvariable (kein statischer Zustand)
     private var lastSpeakerId = 0
 
+    /**
+     * Loads the WeSpeaker ONNX model from internal storage and creates the
+     * [SpeakerEmbeddingExtractor]. Safe to call multiple times.
+     */
     override fun initialize() {
         if (isInitialized) return
         try {
@@ -40,6 +60,16 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
         }
     }
 
+    /**
+     * Identifies the speaker for a given audio segment and returns their ID.
+     *
+     * Short segments (< [MIN_SAMPLES_FOR_EMBEDDING]) are skipped and the last
+     * known speaker ID is returned, since embeddings from very short audio are
+     * unreliable and could pollute the speaker model.
+     *
+     * @param samples PCM float32 audio at 16 kHz, mono.
+     * @return 0-based speaker ID, or -1 if the extractor is not available.
+     */
     override fun identifySpeaker(samples: FloatArray): Int {
         val ext = extractor ?: return -1
         // Skip diarization for very short segments — embeddings are unreliable
@@ -96,6 +126,10 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
         speakerSampleCounts[speakerId] = newCount
     }
 
+    /**
+     * Clears all registered speaker embeddings. Use this at the start of a new
+     * conversation so that speaker numbering restarts from 0.
+     */
     override fun reset() {
         speakerEmbeddings.clear()
         speakerSampleCounts.clear()
@@ -112,6 +146,11 @@ class SherpaSpeakerDiarizer(private val context: Context) : SpeakerDiarizer {
         Log.d(TAG, "Speaker diarizer released")
     }
 
+    /**
+     * Computes cosine similarity between two embedding vectors.
+     * Returns 0 if either vector has zero magnitude or if the sizes differ.
+     * Result is in [-1.0, 1.0]; higher means more similar.
+     */
     private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
         if (a.size != b.size) return 0f
         var dot = 0f

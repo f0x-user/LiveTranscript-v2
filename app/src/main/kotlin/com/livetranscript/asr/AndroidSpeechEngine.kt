@@ -2,6 +2,7 @@ package com.livetranscript.asr
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -78,7 +79,17 @@ class AndroidSpeechEngine(
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 300L)
         }
+        // Ton stummschalten, den der SpeechRecognizer beim Start/Neustart erzeugt.
+        // Beide Streams werden kurz gemuted (je nach Gerät spielt der Beep auf
+        // STREAM_MUSIC oder STREAM_NOTIFICATION).
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,        AudioManager.ADJUST_MUTE, 0)
+        audioManager.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_MUTE, 0)
         recognizer?.startListening(intent)
+        mainHandler.postDelayed({
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,        AudioManager.ADJUST_UNMUTE, 0)
+            audioManager.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_UNMUTE, 0)
+        }, 600L)
         Log.d(TAG, "Listening started (fallbackLevel=$langFallbackLevel, locale='$localeTag')")
     }
 

@@ -9,12 +9,29 @@ import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.livetranscript.models.ModelAssetManager
 
+/**
+ * Whisper-based offline ASR engine using the sherpa-onnx library.
+ *
+ * Uses the Whisper Tiny model (int8-quantised ONNX) for on-device speech recognition.
+ * Model files must be present in [ModelAssetManager] before calling [initialize].
+ *
+ * Thread-safety: [transcribe] is not thread-safe by itself — callers must use a
+ * [kotlinx.coroutines.sync.Mutex] (see [AudioRecorderService.asrMutex]).
+ *
+ * @param context Android context used to locate model files.
+ * @param language Whisper language code (e.g. "de", "en"). Empty string = auto-detect.
+ */
 class SherpaOnnxAsrEngine(private val context: Context, private val language: String = "de") : AsrEngine {
 
     private var recognizer: OfflineRecognizer? = null
     override var isInitialized: Boolean = false
         private set
 
+    /**
+     * Loads the Whisper encoder, decoder, and token files from internal storage and
+     * creates the [OfflineRecognizer]. Safe to call multiple times — returns early if
+     * already initialised. On failure [isInitialized] stays false.
+     */
     override fun initialize() {
         if (isInitialized) return
         try {
@@ -61,6 +78,15 @@ class SherpaOnnxAsrEngine(private val context: Context, private val language: St
         }
     }
 
+    /**
+     * Runs Whisper inference on [samples] and returns the recognised text.
+     *
+     * The raw output is post-processed by [cleanTranscription] to strip noise
+     * tokens such as `[BLANK_AUDIO]` or `(silence)`.
+     *
+     * @param samples PCM float32 audio at 16 kHz, mono, range [-1.0, 1.0].
+     * @return Cleaned transcript text, or null if the segment contains no speech.
+     */
     override fun transcribe(samples: FloatArray): String? {
         val rec = recognizer ?: return null
         return try {
@@ -94,6 +120,10 @@ class SherpaOnnxAsrEngine(private val context: Context, private val language: St
         return cleaned
     }
 
+    /**
+     * Releases all native sherpa-onnx resources. The engine cannot be used after this call.
+     * To use Whisper again after release, create a new instance and call [initialize].
+     */
     override fun release() {
         recognizer?.release()
         recognizer = null
